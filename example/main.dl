@@ -1,0 +1,4 @@
+int main() {
+    print_num(1+2);
+    return 0;
+}
