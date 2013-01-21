@@ -16,7 +16,7 @@ import Data.Either
     kw_return  { KW_Return _     }
     int        { Int       _ $$  }
     var        { Var       _ $$  }
---  '='        { Sym       _ '=' }
+    '='        { Sym       _ '=' }
     '+'        { Sym       _ '+' }
     '-'        { Sym       _ '-' }
     '*'        { Sym       _ '*' }
@@ -43,14 +43,16 @@ Func : Type var '(' FParamList ')' '{' FuncBody '}'  { ($1, $2, $4, $7) }
 Type : kw_int           { Int_t  }
      | kw_void          { Void_t }
 
-FParamList : Type var                   { [($1, $2)] }
-           | Type var ',' FParamList    { ($1, $2):$4    }
+FParamList : Type var                   { [($1, $2)]  }
+           | Type var ',' FParamList    { ($1, $2):$4 }
 
 FuncBody : Stmt ';' FuncBody    { (Left $1):$3  }
          | Expr ';' FuncBody    { (Right $1):$3 }
          | {- empty -}          { [] }
 
-Stmt : kw_return Expr           { ReturnStmt $2 }
+Stmt : kw_return Expr           { ReturnStmt $2    }
+     | Type var                 { DefStmt $1 $2    }
+     | var '=' Expr             { AssignStmt $1 $3 }
 
 Expr : '(' Expr ')'             { $2 }
      | var '(' ')'              { FunCallExpr $1 [] }
@@ -73,6 +75,8 @@ data Type = Int_t
           | Void_t
             deriving (Eq, Show)
 data Stmt = ReturnStmt Expr
+          | DefStmt Type String
+          | AssignStmt String Expr
             deriving (Eq, Show)
 data Expr = FunCallExpr String [Expr]
           | AddExpr Expr Expr

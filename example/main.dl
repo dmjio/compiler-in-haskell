@@ -1,4 +1,10 @@
+int func() {
+    int t;
+    t = 1 + (2+3)*12 + 5;
+    return t;
+}
+
 int main() {
-    print_num(1+2);
+    print_num(func());
     return 0;
 }
