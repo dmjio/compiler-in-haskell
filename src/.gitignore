@@ -1,1 +1,3 @@
 build
+Scanner/DLCScanner.hs
+Parser/DLCParser.hs

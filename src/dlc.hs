@@ -3,12 +3,13 @@ module Main
 
 import System.Environment(getArgs)
 
-import Scanner.DLCScanner -- DEBUG
+-- import Scanner.DLCScanner -- DEBUG
+import Parser.DLCParser
 
 processFile :: [Char] -> IO ()
 processFile filename = do
     code <- readFile filename
-    putStrLn $ show $ alexScanTokens code
+    putStrLn $ show $ run_parser code -- alexScanTokens code
 
 main :: IO ()
 main = do
