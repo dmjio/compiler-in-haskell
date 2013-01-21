@@ -2,13 +2,12 @@ module Main
     where
 
 import System.Environment(getArgs)
--- import System.FilePath.Posix(takeDirectory, takeBaseName)
--- import System.Posix.Directory(changeWorkingDirectory)
--- import System.Directory(createDirectory, doesDirectoryExist)
 import System.FilePath.Posix
 import System.Posix.Directory
 import System.Directory
-import System.IO (IOMode(..), hClose, openFile, hPutStr)
+import System.IO (IOMode(..), hClose, openFile, hPutStr, Handle)
+
+import Data.Map
 
 import Debug.Trace(trace)
 
@@ -33,15 +32,38 @@ writeCMain path =
             "    return dlc_main();",
             "}"]
 
-compileTo :: FilePath -> [Func] -> IO()
+compileTo :: FilePath -> [Func] -> IO ()
 compileTo path funcList =
     do
         f <- openFile path WriteMode
         hPutStr f asHeader
-        mapM_ (\func -> compileFuncTo f func) funcList
+        -- putStrLn $ show $ sMap -- DEBUG
+        mapM_ (\func -> compileFuncTo f func sMap) funcList
         hClose f
     where
         asHeader = ".data\n\n.text\n"
+        sMap = getFuncSignMap funcList
+
+getFuncName :: Func -> String
+getFuncName (_, fname, _, _) = fname
+
+getFuncRetType :: Func -> Type
+getFuncRetType (t, _, _, _) = t
+
+getFuncParamTypeList :: Func -> [Type]
+getFuncParamTypeList (x, y, ((t, _):ts), z) =
+    t:(getFuncParamTypeList (x, y, ts, z))
+getFuncParamTypeList (_, _, [], _) = []
+
+getFuncSignMap :: [Func] -> Map String (Type, [(Type)])
+getFuncSignMap [] = empty
+getFuncSignMap (func:fs) = sMap
+    where
+        funcName = getFuncName func
+        funcRetType = getFuncRetType func
+        funcParamTypeList = getFuncParamTypeList func
+        sign = (funcRetType, funcParamTypeList)
+        sMap = insert funcName sign (getFuncSignMap fs)
 
 processFile :: FilePath -> IO ()
 processFile filePath =
