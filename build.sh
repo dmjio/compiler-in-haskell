@@ -13,4 +13,5 @@ if ( ! [ -e $parser_out ] || [  $parser_in -nt $parser_out ] ); then
 fi
 
 cd src
-ghc -O3 --make -outputdir=build dlc.hs -o ../dlc
+# ghc -O3 --make -outputdir=build dlc.hs -o ../dlc
+ghc --make -outputdir=build dlc.hs -o ../dlc

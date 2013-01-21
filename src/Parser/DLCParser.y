@@ -1,6 +1,6 @@
 {
 module Parser.DLCParser
-    (Type(..), Stmt(..), Expr(..), run_parser)
+    (SourceCode, Func, Type(..), Stmt(..), Expr(..), run_parser)
 where
 
 import Scanner.DLCScanner
