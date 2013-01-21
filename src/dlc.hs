@@ -24,13 +24,33 @@ writeCMain path =
         hClose f
     where
         s = unlines [
-            "#include <stdio.h>",
-            "",
-            "extern int dlc_main(void);",
-            "",
-            "int main(int argc, char *argv[]) {",
-            "    return dlc_main();",
-            "}"]
+                "#include <stdio.h>",
+                "",
+                "extern int dlc_main(void);",
+                "",
+                "int main(int argc, char *argv[]) {",
+                "    return dlc_main();",
+                "}"]
+
+writeMakefile :: FilePath -> String -> IO ()
+writeMakefile path fname =
+    do
+        f <- openFile path WriteMode
+        hPutStr f s
+        hClose f
+    where
+        dlas = fname ++ ".s"
+        dlo = dlas ++ ".o"
+        s = unlines [
+                "a.out: main.o " ++ dlo,
+                "\tcc -o a.out main.o " ++ dlo,
+                "",
+                "main.o: main.c",
+                "\tcc -c main.c -o main.o",
+                "",
+                dlo ++ ": " ++ dlas,
+                "\tas -o " ++ dlo ++ " " ++ dlas,
+                ""]
 
 compileTo :: FilePath -> [Func] -> IO ()
 compileTo path funcList =
@@ -55,7 +75,7 @@ getFuncParamTypeList (x, y, ((t, _):ts), z) =
     t:(getFuncParamTypeList (x, y, ts, z))
 getFuncParamTypeList (_, _, [], _) = []
 
-getFuncSignMap :: [Func] -> Map String (Type, [(Type)])
+getFuncSignMap :: [Func] -> Map String (Type, [Type])
 getFuncSignMap [] = empty
 getFuncSignMap (func:fs) = sMap
     where
@@ -71,6 +91,7 @@ processFile filePath =
         workDir = takeDirectory filePath
         filename = takeFileName filePath
         cMainPath = "build/main.c"
+        makefilePath = "build/Makefile"
         asPath = "build/" ++ filename ++ ".s"
     in do
         changeWorkingDirectory workDir
@@ -80,6 +101,7 @@ processFile filePath =
             then System.Directory.createDirectory "build"
             else return ()
         writeCMain cMainPath
+        writeMakefile makefilePath filename
         code <- readFile filename
         compileTo asPath $ run_parser code
 
