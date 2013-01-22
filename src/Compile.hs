@@ -23,6 +23,9 @@ registerTable = [
 -- function signature map
 type FuncSignMap = Map String (Type, [Type])
 -- stack usage record
+-- the integer is how much space the element uses;
+-- but because of the limitation of push/pop, each element always
+-- use 8 bytes.
 type StackUsageRec = [(String, Int)]
 
 -- FIXME: number of params is restricted to no more than 6 for now
@@ -33,6 +36,7 @@ compileFuncTo f (retType, funcNameOrig, paramList, funcBody) fsMap =
         (suRec, hea, foo) = funcASHeaderFooter paramList
         header = "pushq %rbp":"movq %rsp, %rbp":hea
         footer = foo ++ ["popq %rbp", "ret"]
+        body = compFuncBody fsMap suRec funcBody
     in do
         hPutStr f (".globl " ++ fname ++ "\n")
         hPutStr f (fname ++ ":\n")
@@ -41,6 +45,55 @@ compileFuncTo f (retType, funcNameOrig, paramList, funcBody) fsMap =
         hPutStr f "\n"
         putStrLn $ show fsMap -- DEBUG
         putStrLn $ show suRec -- DEBUG
+
+compFuncBody :: FuncSignMap -> StackUsageRec -> [Either Stmt Expr] ->
+                [String]
+compFuncBody _ suRec [] =
+    -- FIXME: wait... why don't I just write "mov %rbp, %rsp"?
+    ["add %rsp, $" ++ (show ((length suRec) * 8)) ++ "\n",
+     "ret\n"]
+compFuncBody fsMap suRec ((Left stmt):xs) =
+    let (suRec', asCode) = compStmt fsMap suRec stmt
+    in  asCode ++ (compFuncBody fsMap suRec' xs)
+compFuncBody fsMap suRec ((Right expr):xs) =
+    (compExpr fsMap suRec expr) ++
+    ["add $8, %rsp\n"] ++ -- the return value is ignored
+    (compFuncBody fsMap suRec xs)
+
+-- statements may change the stack usage record.
+-- (e.g., int i;)
+compStmt :: FuncSignMap -> StackUsageRec -> Stmt -> (StackUsageRec, [String])
+compStmt fsMap suRec (ReturnStmt expr) =
+    let
+        exprCode = compExpr fsMap suRec expr
+        stackSizeStr = show $ (length suRec) * 8
+    in
+        exprCode ++ ["movq -" ++ stackSizeStr ++ "(%rbp), %rax\n"] ++
+        -- take advantage of compFuncBody here...
+        -- notice: we must also pop the temporary value out,
+        -- so a dumb record is added.
+        compFuncBody fsMap (suRec ++ [("", 4)]) []
+compStmt _ suRec (DefStmt vType vName) =
+    -- be careful: the order is important for accessing the variable.
+    (suRec ++ [(vName, typeToSize vType)],
+     ["sub $8, %rsp\n"])
+compStmt fsMap suRec (AssignStmt vName expr) =
+    let
+        exprCode = compExpr fsMap suRec expr
+        varOffset = (length (takeWhile (\(s, _) -> s != vName) suRec) + 1) * 8
+    in
+        exprCode ++
+        ["pop %rdi\n",
+         "movq %rdi, -" ++ (show varOffset) ++ "(%rbp)\n"]
+
+-- finally push the result onto the bottom of stack.
+-- (e.g., where %rsp currently points to)
+--
+-- ** NOTICE **
+-- the tempary value push onto the stack is NOT stored in StackUsageRecord.
+-- be careful!!!!!!!!
+compExpr :: FuncSignMap -> StackUsageRec -> Expr -> [String]
+
 
 convDLCFuncName :: String -> String
 convDLCFuncName f = if f == "main" then "_dlc_main" else "__dlc_f_" ++ f
@@ -71,7 +124,6 @@ funcASHeaderFooter paramList =
         if (length suRec) >= 2
         then (suRec, header, footer)
         else
-            -- FIXME: should be Long_t and pushq when long is added.
             let suRec' = ("", 4):suRec
                 header' = "push %rdi":header
                 footer' = footer ++ ["pop %rdi"]
@@ -98,16 +150,3 @@ sizeToRegister 1 (_:_:_:x:_) = x
 
 typeToSuffix :: Type -> String
 typeToSuffix Int_t = "l"
-
--- -- return *initial stack information* and *assembly instructions used*
--- -- to push the params into the stack.
--- pushParamsIntoStack :: [(Type, String)] -> [[String]] -> ([String, Type], [String])
--- pushParamsIntoStack [] _ = ([], [])
--- pushParamsIntoStack (t, v):xs r:rs =
---     let
---         (info, instrList) = pushParamsIntoStack xs
---         info_new = (v, t):info
---         -- FIXME: assuming only ints here...
---         instr = "pushl " ++ r!!1
---     in
---         (info_new, instr:instrList)
