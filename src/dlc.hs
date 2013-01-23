@@ -28,6 +28,8 @@ writeCMain path =
                 "",
                 "extern int dlc_main(void);",
                 "",
+                "void print_num(long x) {printf(\"%ld\\n\", x);}",
+                "",
                 "int main(int argc, char *argv[]) {",
                 "    return dlc_main();",
                 "}"]
@@ -43,10 +45,10 @@ writeMakefile path fname =
         dlo = dlas ++ ".o"
         s = unlines [
                 "a.out: main.o " ++ dlo,
-                "\tcc -o a.out main.o " ++ dlo,
+                "\tcc -g -o a.out main.o " ++ dlo,
                 "",
                 "main.o: main.c",
-                "\tcc -c main.c -o main.o",
+                "\tcc -g -Wall -c main.c -o main.o",
                 "",
                 dlo ++ ": " ++ dlas,
                 "\tas -o " ++ dlo ++ " " ++ dlas,
