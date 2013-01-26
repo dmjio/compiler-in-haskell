@@ -1,10 +1,9 @@
 {
-module Parser.DLCParser
-    (SourceCode, Func, Type(..), Stmt(..), Expr(..), run_parser)
-where
+module Parser.DLCParser (run_parser)
+    where
 
 import Scanner.DLCScanner
-import Data.Either
+import AST
 }
 
 %name calc
@@ -69,29 +68,9 @@ ParamList : Expr                { [$1]  }
           | Expr ',' ParamList  { $1:$3 }
 
 {
-type SourceCode = [Func]
-type Func = (Type, String, [(Type, String)], [Either Stmt Expr])
-data Type = Int_t
-          | Void_t
-            deriving (Eq, Show)
-data Stmt = ReturnStmt Expr
-          | DefStmt Type String
-          | AssignStmt String Expr
-            deriving (Eq, Show)
-data Expr = FunCallExpr String [Expr]
-          | AddExpr Expr Expr
-          | SubExpr Expr Expr
-          | MulExpr Expr Expr
-          | DivExpr Expr Expr
-          | NegExpr Expr
-          | IntExpr Int
-          | VarExpr String
-            deriving (Eq, Show)
-
 run_parser :: String -> SourceCode
 run_parser = calc . alexScanTokens
 
--- dafuq?
 happyError :: [Token] -> a
 happyError tks = error ("Parse error at " ++ lcn ++ "\n")
 	where

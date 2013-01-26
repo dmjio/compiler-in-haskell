@@ -9,12 +9,13 @@ import System.IO (IOMode(..), hClose, openFile, hPutStr, Handle)
 
 import Data.Map
 
-import Debug.Trace(trace)
+import Debug.Trace(trace) -- DEBUG
 
 -- import Scanner.DLCScanner -- DEBUG
 import Parser.DLCParser
 
 import Compile(compileFuncTo)
+import AST
 
 writeCMain :: FilePath -> IO ()
 writeCMain path =

@@ -3,6 +3,7 @@ module Compile(compileFuncTo)
 
 import System.IO
 import Parser.DLCParser
+import AST
 
 import Data.Map
 
@@ -136,7 +137,7 @@ compExpr _     suRec (VarExpr vName) =
     in
         ["mov -" ++ (show varPos) ++ "(%rbp), %rax", "push %rax"]
 
--- compute the expression "e1 ?? e2".
+-- compute the expression "e2 ?? e1".
 -- I cannot find a good name, so decided to just give it a weird one.
 compE1_WHAT_E2 :: FuncSignMap -> StackUsageRec -> Expr -> Expr -> String -> [String]
 compE1_WHAT_E2 fsMap suRec e1 e2 what =
@@ -189,9 +190,6 @@ funcASHeaderFooter paramList =
                     in
                         (suRec'', header'', footer'')
 
-typeToSize :: Type -> Int
-typeToSize Int_t = 4
-typeToSize Void_t = 0
 
 sizeToRegister :: Int -> [String] -> String
 sizeToRegister 8 (x:_) = x
@@ -199,5 +197,11 @@ sizeToRegister 4 (_:x:_) = x
 sizeToRegister 2 (_:_:x:_) = x
 sizeToRegister 1 (_:_:_:x:_) = x
 
+sizeToSuffix :: Int -> String
+sizeToSuffix 8 = "q"
+sizeToSuffix 4 = "l"
+sizeToSuffix 2 = "w"
+sizeToSuffix 1 = "b"
+
 typeToSuffix :: Type -> String
-typeToSuffix Int_t = "l"
+typeToSuffix = sizeToSuffix . typeToSize
