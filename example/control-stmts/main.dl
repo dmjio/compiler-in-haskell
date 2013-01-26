@@ -19,11 +19,12 @@ int fib2(int n) {
 
 int fib_fast(int n) {
     int a = 1, b = 1, n = 1;
-    while (n < 40) {
+    bool n_less_than_40 = true;
+    while (n_less_than_40) {
         int t = a + b;
         a = b;
         b = t;
-        n++;
+        n_less_than_40 = n++ < 40;
     }
     return n;
 }
