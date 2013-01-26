@@ -1,0 +1,38 @@
+// in memory of xudi1990, aka Dilaosi
+// (wait... what did I just wrote?)
+int fib(int n) {
+    /*
+     * relax, take it easy...
+     */
+    if (n < 2)
+        return 1;
+    return fib(n-1) + fib(n-2);
+}
+
+int fib2(int n) {
+    if (n == 1 || n == 2 || n <= 2) { // just for testing...
+        return 1;
+    } else {
+        return fib(n-1) + fib(n-2);
+    }
+}
+
+int fib_fast(int n) {
+    int a = 1, b = 1, n = 1;
+    while (n < 40) {
+        int t = a + b;
+        a = b;
+        b = t;
+        n++;
+    }
+    return n;
+}
+
+int main() {
+    // print_num is defined in C.
+    // let's pretend it's a DL function for now...
+    print_num(fib(40));
+    // print_num(fib2(40));
+    print_num(fib_fast(40));
+    return 0;
+}
