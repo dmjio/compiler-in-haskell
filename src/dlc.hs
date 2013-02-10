@@ -14,7 +14,8 @@ import Debug.Trace(trace) -- DEBUG
 -- import Scanner.DLCScanner -- DEBUG
 import Parser.DLCParser
 
-import Compile(compileFuncTo)
+import Compile(compile)
+import Assembly(stringifyAssemFunc)
 import AST
 
 writeCMain :: FilePath -> IO ()
@@ -61,7 +62,8 @@ compileTo path funcList =
         f <- openFile path WriteMode
         hPutStr f asHeader
         -- putStrLn $ show $ sMap -- DEBUG
-        mapM_ (\func -> compileFuncTo f func sMap) funcList
+        -- mapM_ (\func -> compileFuncTo f func sMap) funcList
+        mapM_ (\x -> hPutStr f (x ++ "\n")) (compile funcList sMap)
         hClose f
     where
         asHeader = ".data\n\n.text\n"

@@ -10,6 +10,9 @@ import Data.Map
 -- current stack usage:
 -- [(String, Type)]
 
+-- FIXME:
+compile :: [Func] -> FuncSignMap -> [String]
+
 type RegisterTable = [[String]]
 registerTable :: RegisterTable
 registerTable = [
