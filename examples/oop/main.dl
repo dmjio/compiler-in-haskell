@@ -1,0 +1,21 @@
+class H { // implies "extends Object"
+    int x;
+    bool b;
+
+    void init() {
+        // super.init();
+        self.x = 42;
+        self.b = true;
+    }
+
+    void dumpX() {
+        __dlib_print_num(this.x);
+        __dlib_print_char('\n');
+    }
+
+    void dumpB() {
+        if(b) {
+            __dlib_print_str("");
+        }
+    }
+}

@@ -1,0 +1,12 @@
+// xudi1990
+int fib(int n) {
+    if (n < 2)
+        return 1;
+    return fib(n-1) + fib(n-2);
+}
+
+int main() {
+    __dlib_print_num(fib(40));
+    __dlib_print_char('\n');
+    return 0;
+}
