@@ -1,16 +1,27 @@
 class __DL_Array { // implies "extends Object"
-    int __dl_bufptr;
-    int __dl_length;
-    int __dl_bsize;
+    protected int __dl_bufptr;
+    protected int __dl_length;
+    protected int __dl_bsize;
+
+    protected init() { // hide constructor.
+        // implies super.init()
+    }
 
     static __DL_Array __dl_create(int len, int bsize) {
         __DL_Array a = new __DL_Array();
         a.__dl_bufptr = __dlib_malloc(len * bsize);
         a.__dl_length = len;
         a.__dl_bsize = bsize;
+        return a;
     }
 
-    void __dl_decref() {
+    static __DL_Array __dl_copyFromCBytes(int ptr, int len, int bsize) {
+        __DL_Array a = __DL_Array.__dl_create(len, bsize);
+        __dlib_memcpy(a.__dl_bufptr, ptr, len * bsize);
+        return a;
+    }
+
+    protected void __dl_decref() {
         if (self.__dl_ref == 0) {
             __dlib_free(__dl_bufptr);
         }
@@ -31,10 +42,10 @@ class __DL_Array { // implies "extends Object"
 }
 
 class __DL_RefArray extends __DL_Array {
-    void __dl_decref() {
+    protected void __dl_decref() {
         if (self.__dl_ref == 0) {
             for (int i = 0; i < self.__dl_length; i++) {
-                ((__DL_Object)self.get(i)).__dl_decref();
+                ((Object)self.get(i)).__dl_decref();
             }
         }
         super.__dl_decref();

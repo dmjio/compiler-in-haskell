@@ -1,6 +1,6 @@
-class H { // implies "extends Object"
+class Pos { // implies "extends Object"
     int x;
-    bool b;
+    protected bool b;
 
     void init() {
         // super.init();
@@ -9,13 +9,65 @@ class H { // implies "extends Object"
     }
 
     void dumpX() {
-        __dlib_print_num(this.x);
-        __dlib_print_char('\n');
+        print(this.x);
+        print('\n');
     }
 
     void dumpB() {
-        if(b) {
-            __dlib_print_str("");
-        }
+        print("b is ", self.b, '\n');
     }
+
+    void setX(int x) {
+        this.x = x;
+    }
+
+    void setB(bool b) {
+        this.b = b;
+    }
+}
+
+class Point extends Pos {
+    int y;
+
+    void init() {
+        super.init();
+        this.setY(0);
+    }
+
+    void dumpY() {
+        print(self.y);
+        print('\n');
+    }
+
+    void dumpPoint() {
+        //     (        x   ,         y   )\n
+        print('(', self.x, ", ", self.y, ")\n");
+    }
+
+    void setY(int y) {
+        this.y = y;
+    }
+
+    void setP(int x, int y) {
+        this.setX(x);
+        this.setY(y);
+    }
+}
+
+int main() {
+    Point p = new Point();
+    p.dumpPoint();
+    p.setP(1, 2);
+    p.dumpPoint();
+
+    Point[] parr = new Point[10];
+    // parr[0..9] are created!
+
+    long i = 0; // there's already a for(long i = 0;...) in the runtime.
+    for (i = 0; i < parr.length(); i++) {
+        parr.get(0).setP(i, i);
+        parr.get(0).dumpPoint();
+    }
+
+    return 0;
 }

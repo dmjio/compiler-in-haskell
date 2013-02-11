@@ -1,4 +1,10 @@
-class __DL_Object {
+// public/protected:
+//      if not given, same as the override one in super class.
+//      if super class doesn't contain the method or
+//      there's no super class (current class is Object), then
+//      it's public.
+
+class Object {
     protected int __dl_ref;
 
     void init() {
@@ -6,11 +12,11 @@ class __DL_Object {
         self.__dl_ref = 0;
     }
 
-    void __dl_incref() {
+    protected void __dl_incref() {
         self.__dl_ref++;
     }
 
-    void __dl_decref() {
+    protected void __dl_decref() {
         if (--self.__dl_ref <= 0) {
             __dlib_free(self);
         }
