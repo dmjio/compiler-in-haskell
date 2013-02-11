@@ -6,7 +6,6 @@ int fib(int n) {
 }
 
 int main() {
-    __dlib_print_num(fib(40));
-    __dlib_print_char('\n');
+    print(fib(40), '\n');
     return 0;
 }
