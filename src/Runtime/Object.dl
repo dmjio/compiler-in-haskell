@@ -5,6 +5,7 @@
 //      it's public.
 
 class Object {
+    protected int __dl_cid; // class id -- address of method table
     protected int __dl_ref;
 
     void init() {

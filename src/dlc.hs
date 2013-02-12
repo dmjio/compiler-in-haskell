@@ -1,13 +1,12 @@
 module Main
     where
 
+import System.Environment(getArgs)
 import Scanner.DLCScanner(alexScanTokens, token_print)
 import Data.Map
 
+testScanner :: IO ()
+testScanner = getArgs >>= (\(x:_) -> return x) >>= readFile >>= (token_print . alexScanTokens)
+
 main :: IO ()
-main = do
-    code <- readFile "src/Runtime/Object.dl"
-    token_print $ alexScanTokens code
-    -- args <- getArgs
-    -- if length args == 1
-    --     then 
+main = testScanner

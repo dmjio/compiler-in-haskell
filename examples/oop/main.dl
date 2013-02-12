@@ -65,8 +65,8 @@ int main() {
 
     long i = 0; // there's already a for(long i = 0;...) in the runtime.
     for (i = 0; i < parr.length(); i++) {
-        parr.get(0).setP(i, i);
-        parr.get(0).dumpPoint();
+        parr[i].setP(i, i);  // parr.get(0).setP(i, i);
+        parr[i].dumpPoint(); // parr.get(0).dumpPoint();
     }
 
     return 0;

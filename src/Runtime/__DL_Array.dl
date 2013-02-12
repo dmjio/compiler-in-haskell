@@ -5,6 +5,7 @@ class __DL_Array { // implies "extends Object"
 
     protected init() { // hide constructor.
         // implies super.init()
+        // return; // return with no argument
     }
 
     static __DL_Array __dl_create(int len, int bsize) {
@@ -28,11 +29,11 @@ class __DL_Array { // implies "extends Object"
         super.__dl_decref();
     }
 
-    int get(int idx) {
+    int __dl_get(int idx) {
         return __dlib_arr_get(self.__dl_bufptr, idx, self.__dl_bsize);
     }
 
-    void set(int idx, int d) {
+    void __dl_set(int idx, int d) {
         __dlib_arr_set(self.__dl_bufptr, d, idx, self.__dl_bsize);
     }
 
@@ -45,7 +46,7 @@ class __DL_RefArray extends __DL_Array {
     protected void __dl_decref() {
         if (self.__dl_ref == 0) {
             for (int i = 0; i < self.__dl_length; i++) {
-                ((Object)self.get(i)).__dl_decref();
+                ((Object)self.__dl_get(i)).__dl_decref();
             }
         }
         super.__dl_decref();
