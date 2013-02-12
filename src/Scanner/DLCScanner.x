@@ -95,10 +95,16 @@ data Token = KW_Return      AlexPosn
            | DStr           AlexPosn String -- "\"Hello\\n\"" <= "Hello\n"
              deriving (Eq, Show)
 
--- just for fun... I miss Alan so much... :3
 unescape :: String -> Int
 unescape "\'\"\'" = ord '"'
 unescape x = (ord . head . (read :: String -> String ) . ("\"" ++) . (++ "\"") . tail . init) x
+
+-- just for fun... I miss Alan so much... :3
+--
+-- (ack!! ghc doesn't allow me to mix dot-free style with the regular!)
+-- (ack! ack!! ack!!!)
+--
+-- unescape = (ord . head . (read :: String -> String ) . ("\"" ++) . (++ "\"") . tail . init)
 
 token_print :: [Token] -> IO ()
 token_print = tp 0
