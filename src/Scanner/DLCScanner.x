@@ -38,6 +38,10 @@ tokens :-
     "do"                                {(\p s -> KW_Do        p)}
     "while"                             {(\p s -> KW_While     p)}
     "print"                             {(\p s -> KW_Print     p)}
+    "and"                               {(\p s -> KW_And       p)}
+    "or"                                {(\p s -> KW_Or        p)}
+    "not"                               {(\p s -> KW_Not       p)}
+    "null"                              {(\p s -> KW_Null      p)}
     $digit+                             {(\p s -> Int          p (read s))}
     [$alpha \_] [$alpha $digit \_]*     {(\p s -> Var          p s)}
     "++"                                {(\p s -> Sym          p s)}
@@ -88,6 +92,10 @@ data Token = KW_Return      AlexPosn
            | KW_Do          AlexPosn
            | KW_While       AlexPosn
            | KW_Print       AlexPosn
+           | KW_And         AlexPosn
+           | KW_Or          AlexPosn
+           | KW_Not         AlexPosn
+           | KW_Null        AlexPosn
            | Int            AlexPosn Int
            | Var            AlexPosn String
            | Sym            AlexPosn String -- ";", "(", "{", "++", "-", ...
@@ -139,6 +147,7 @@ token_posn (KW_For        p)  = p
 token_posn (KW_Do         p)  = p
 token_posn (KW_While      p)  = p
 token_posn (KW_Print      p)  = p
+token_posn (KW_Null       p)  = p
 token_posn (Int         p _)  = p
 token_posn (Var         p _)  = p
 token_posn (Sym         p _)  = p

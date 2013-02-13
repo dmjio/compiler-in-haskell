@@ -3,29 +3,67 @@ module Parser.DLCParser (run_parser)
     where
 
 import Scanner.DLCScanner
-import AST
+import Parser.ParserAST
+
+-- FIXME: &, |, ^, ~
 }
 
 %name calc
 %tokentype {Token}
 
 %token
-    kw_int     { KW_Int    _     }
-    kw_void    { KW_Void   _     }
-    kw_return  { KW_Return _     }
-    int        { Int       _ $$  }
-    var        { Var       _ $$  }
-    '='        { Sym       _ '=' }
-    '+'        { Sym       _ '+' }
-    '-'        { Sym       _ '-' }
-    '*'        { Sym       _ '*' }
-    '/'        { Sym       _ '/' }
-    '('        { Sym       _ '(' }
-    ')'        { Sym       _ ')' }
-    '{'        { Sym       _ '{' }
-    '}'        { Sym       _ '}' }
-    ';'        { Sym       _ ';' }
-    ','        { Sym       _ ',' }
+    kw_return     { KW_Return     _      }
+    kw_int        { KW_Int        _      }
+    kw_int32      { KW_Int32      _      }
+    kw_byte       { KW_Byte       _      }
+    kw_bool       { KW_Bool       _      }
+    kw_true       { KW_True       _      }
+    kw_false      { KW_False      _      }
+    kw_void       { KW_Void       _      }
+    kw_class      { KW_Class      _      }
+    kw_public     { KW_Public     _      }
+    kw_protected  { KW_Protected  _      }
+    kw_self       { KW_Self       _      }
+    kw_super      { KW_Super      _      }
+    kw_new        { KW_New        _      }
+    kw_extends    { KW_Extends    _      }
+    kw_if         { KW_If         _      }
+    kw_else       { KW_Else       _      }
+    kw_for        { KW_For        _      }
+    kw_do         { KW_Do         _      }
+    kw_while      { KW_While      _      }
+    kw_print      { KW_Print      _      }
+    kw_and        { KW_And        _      }
+    kw_or         { KW_Or         _      }
+    kw_not        { KW_Not        _      }
+    kw_null       { KW_Null       _      }
+    int           { Int           _ $$   }
+    var           { Var           _ $$   }
+    "++"          { Sym           _ "++" }
+    "+="          { Sym           _ "+=" }
+    "--"          { Sym           _ "--" }
+    "-="          { Sym           _ "-=" }
+    "=="          { Sym           _ "==" }
+    "<="          { Sym           _ "<=" }
+    ">="          { Sym           _ ">=" }
+    "+"           { Sym           _ "+"  }
+    "-"           { Sym           _ "-"  }
+    "*"           { Sym           _ "*"  }
+    "/"           { Sym           _ "/"  }
+    "="           { Sym           _ "="  }
+    "<"           { Sym           _ "<"  }
+    ">"           { Sym           _ ">"  }
+    "("           { Sym           _ "("  }
+    ")"           { Sym           _ ")"  }
+    "{"           { Sym           _ "{"  }
+    "}"           { Sym           _ "}"  }
+    "["           { Sym           _ "["  }
+    "]"           { Sym           _ "]"  }
+    ";"           { Sym           _ ";"  }
+    ","           { Sym           _ ","  }
+    "."           { Sym           _ "."  }
+    char          { DChar         _ $$   }
+    str           { DStr          _ $$   }
 
 %left '+' '-'
 %left '*' '/'
