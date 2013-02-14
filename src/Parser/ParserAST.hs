@@ -18,14 +18,16 @@ type PVarDef = (PType, [(String, Maybe PExpr)])
 
 data PClassAccessModifier = PPublic | PProtected | PPrivate deriving (Eq, Show)
 
-data PType = PVoid | PValType deriving (Eq, Show)
-data PBasicValType = PInt | PInt32 | PByte | PBool | PObjClass String deriving (Eq, Show)
-data PValType = PBasicValType | PArray PValType deriving (Eq, Show)
+data PType = PVoid | PInt | PInt32 | PByte | PBool | PObjClass String | PArray PType
+             deriving (Eq, Show)
+-- data PType = PVoid | PValType deriving (Eq, Show)
+-- data PBasicValType = PInt | PInt32 | PByte | PBool | PObjClass String deriving (Eq, Show)
+-- data PValType = PBasicValType | PArray PValType deriving (Eq, Show)
 
 type PSentence = Either PStmt PExpr
 
 data PStmt = PStmtVarDef PVarDef
-           | PStmtPrint PExpr -- PExprList / single expr
+           | PStmtPrint [PExpr]
            | PStmtIf PExpr [PSentence] [PSentence]
            | PStmtFor PSentence PExpr PExpr [PSentence]
            | PStmtWhile PExpr [PSentence]
@@ -56,11 +58,14 @@ data PExpr = PExprList [PExpr] -- a++, a=1, k[10].x=x+2 (could be empty)
            | PExprGe PExpr PExpr    -- i > n
            | PExprArrAccess PExpr PExpr     -- a[expr]
            | PExprDotAccess PExpr String    -- expr.hello
-           | PExprBool Bool     -- true/false
+           | PExprBool Bool     -- True/False
            | PExprVar String    -- c
            | PExprInt Int       -- 12
            | PExprStr String    -- "Hello\n"
            | PExprChar Int      -- '\n'
+           | PExprNull          -- null
+           | PExprConvType PType PExpr -- (Object)s
+           | PExprAssign (Maybe PExpr) String PExpr -- i = 5
            | PExprNewObj String              -- new Hi()
-           | PExprNewArr PBasicValType [Int] -- new int[35]
+           | PExprNewArr PType [Int] -- new int[35]
              deriving (Eq, Show)
