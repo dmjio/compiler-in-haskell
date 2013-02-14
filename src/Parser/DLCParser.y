@@ -130,7 +130,11 @@ VarDefItem : var "=" Expr         { ($1, Just $3) }
 Type : kw_void { PVoid }
      | ValType { $1 }
 
-ValType : BasicValType    { $1 }
+ValType : kw_int          { PInt }
+        | kw_byte         { PByte }
+        | kw_bool         { PBool }
+        | var             { PObjClass $1 }
+        | var "[" "]"     { PArray (PObjClass $1) }
         | ValType "[" "]" { PArray $1 }
 
 BasicValType : kw_int   { PInt }
