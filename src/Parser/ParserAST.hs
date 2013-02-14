@@ -25,34 +25,42 @@ data PValType = PBasicValType | PArray PValType deriving (Eq, Show)
 type PSentence = Either PStmt PExpr
 
 data PStmt = PStmtVarDef PVarDef
-           | PStmtPrint [PExpr]
-           | PStmtIf PExpr PSentence (Maybe PSentence)
+           | PStmtPrint PExpr -- PExprList / single expr
+           | PStmtIf PExpr [PSentence] [PSentence]
            | PStmtFor PSentence PExpr PExpr [PSentence]
            | PStmtWhile PExpr [PSentence]
            | PStmtDoWhile [PSentence] PExpr
            | PStmtReturn PExpr
              deriving (Eq, Show)
-data PExpr = PExprList [PExpr] -- combined expr: "a++, a=1, k[10].x=x+2" (could be empty)
-           | PExprFunCall (Maybe PExpr) String [PExpr]
-           | PExprAdd PExpr PExpr
-           | PExprMin PExpr PExpr
-           | PExprMul PExpr PExpr
-           | PExprDiv PExpr PExpr
-           | PExprAnd PExpr PExpr
-           | PExprOr PExpr PExpr
-           | PExprNot PExpr
-           | PExprInc PExpr
-           | PExprDec PExpr
-           | PExprIncBy PExpr PExpr
-           | PExprDecBy PExpr PExpr
-           | PExprLeq PExpr PExpr
-           | PExprGeq PExpr PExpr
-           | PExprLe PExpr PExpr
-           | PExprGe PExpr PExpr
-           | PExprArrAccess PExpr PExpr
-           | PExprDotAccess PExpr String
-           | PExprVar String
-           | PExprInt Int
-           | PExprNewObj String
-           | PExprNewArr PBasicValType [Int]
+data PExpr = PExprList [PExpr] -- a++, a=1, k[10].x=x+2 (could be empty)
+           | PExprFunCall (Maybe PExpr) String [PExpr] -- point[8].dump()
+           | PExprAdd PExpr PExpr   -- a + b
+           | PExprMin PExpr PExpr   -- a - b
+           | PExprMul PExpr PExpr   -- a * b
+           | PExprDiv PExpr PExpr   -- a / b
+           | PExprNeg PExpr         -- -a
+           | PExprAnd PExpr PExpr   -- a and b <= a && b
+           | PExprOr PExpr PExpr    -- a or b  <= a || b
+           | PExprNot PExpr         -- not a   <= !a
+           | PExprIncV PExpr        -- ++i
+           | PExprDecV PExpr        -- --i
+           | PExprVInc PExpr        -- i++
+           | PExprVDec PExpr        -- i--
+           | PExprIncBy PExpr PExpr -- i += n
+           | PExprDecBy PExpr PExpr -- i -= n
+           | PExprEq PExpr PExpr    -- i == n
+           | PExprNeq PExpr PExpr   -- i != n
+           | PExprLeq PExpr PExpr   -- i <= n
+           | PExprGeq PExpr PExpr   -- i >= n
+           | PExprLe PExpr PExpr    -- i < n
+           | PExprGe PExpr PExpr    -- i > n
+           | PExprArrAccess PExpr PExpr     -- a[expr]
+           | PExprDotAccess PExpr String    -- expr.hello
+           | PExprBool Bool     -- true/false
+           | PExprVar String    -- c
+           | PExprInt Int       -- 12
+           | PExprStr String    -- "Hello\n"
+           | PExprChar Int      -- '\n'
+           | PExprNewObj String              -- new Hi()
+           | PExprNewArr PBasicValType [Int] -- new int[35]
              deriving (Eq, Show)

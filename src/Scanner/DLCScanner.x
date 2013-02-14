@@ -22,12 +22,12 @@ tokens :-
     "int32"                             {(\p s -> KW_Int32     p)}
     "byte"                              {(\p s -> KW_Byte      p)}
     "bool"                              {(\p s -> KW_Bool      p)}
-    "true"                              {(\p s -> KW_True      p)}
-    "false"                             {(\p s -> KW_False     p)}
     "void"                              {(\p s -> KW_Void      p)}
     "class"                             {(\p s -> KW_Class     p)}
     "public"                            {(\p s -> KW_Public    p)}
     "protected"                         {(\p s -> KW_Protected p)}
+    "private"                           {(\p s -> KW_Private   p)}
+    "static"                            {(\p s -> KW_Static    p)}
     "self"                              {(\p s -> KW_Self      p)}
     "super"                             {(\p s -> KW_Super     p)}
     "new"                               {(\p s -> KW_New       p)}
@@ -42,6 +42,8 @@ tokens :-
     "or"                                {(\p s -> KW_Or        p)}
     "not"                               {(\p s -> KW_Not       p)}
     "null"                              {(\p s -> KW_Null      p)}
+    "true"                              {(\p s -> Boolean      p True)}
+    "false"                             {(\p s -> Boolean      p False)}
     $digit+                             {(\p s -> Int          p (read s))}
     [$alpha \_] [$alpha $digit \_]*     {(\p s -> Var          p s)}
     "++"                                {(\p s -> Sym          p s)}
@@ -49,6 +51,7 @@ tokens :-
     "--"                                {(\p s -> Sym          p s)}
     "-="                                {(\p s -> Sym          p s)}
     "=="                                {(\p s -> Sym          p s)}
+    "!="                                {(\p s -> Sym          p s)}
     "<="                                {(\p s -> Sym          p s)}
     ">="                                {(\p s -> Sym          p s)}
     [\+\-\*\/\=\<\>\(\)\{\}\[\]\;\,\.]  {(\p s -> Sym          p s)}
@@ -76,12 +79,12 @@ data Token = KW_Return      AlexPosn
            | KW_Int32       AlexPosn
            | KW_Byte        AlexPosn
            | KW_Bool        AlexPosn
-           | KW_True        AlexPosn
-           | KW_False       AlexPosn
            | KW_Void        AlexPosn
            | KW_Class       AlexPosn
            | KW_Public      AlexPosn
            | KW_Protected   AlexPosn
+           | KW_Private     AlexPosn
+           | KW_Static      AlexPosn
            | KW_Self        AlexPosn
            | KW_Super       AlexPosn
            | KW_New         AlexPosn
@@ -96,6 +99,7 @@ data Token = KW_Return      AlexPosn
            | KW_Or          AlexPosn
            | KW_Not         AlexPosn
            | KW_Null        AlexPosn
+           | Boolean        AlexPosn Bool
            | Int            AlexPosn Int
            | Var            AlexPosn String
            | Sym            AlexPosn String -- ";", "(", "{", "++", "-", ...
@@ -131,12 +135,12 @@ token_posn (KW_Int        p)  = p
 token_posn (KW_Int32      p)  = p
 token_posn (KW_Byte       p)  = p
 token_posn (KW_Bool       p)  = p
-token_posn (KW_True       p)  = p
-token_posn (KW_False      p)  = p
 token_posn (KW_Void       p)  = p
 token_posn (KW_Class      p)  = p
 token_posn (KW_Public     p)  = p
 token_posn (KW_Protected  p)  = p
+token_posn (KW_Private    p)  = p
+token_posn (KW_Static     p)  = p
 token_posn (KW_Self       p)  = p
 token_posn (KW_Super      p)  = p
 token_posn (KW_New        p)  = p
@@ -148,6 +152,7 @@ token_posn (KW_Do         p)  = p
 token_posn (KW_While      p)  = p
 token_posn (KW_Print      p)  = p
 token_posn (KW_Null       p)  = p
+token_posn (Boolean     p _)  = p
 token_posn (Int         p _)  = p
 token_posn (Var         p _)  = p
 token_posn (Sym         p _)  = p
