@@ -56,7 +56,7 @@ data PExpr = PExprList [PExpr] -- a++, a=1, k[10].x=x+2 (could be empty)
            | PExprGeq PExpr PExpr   -- i >= n
            | PExprLe PExpr PExpr    -- i < n
            | PExprGe PExpr PExpr    -- i > n
-           | PExprArrAccess PExpr PExpr     -- a[expr]
+           | PExprArrAccess PExpr [PExpr]   -- a[expr][expr]
            | PExprDotAccess PExpr String    -- expr.hello
            | PExprBool Bool     -- True/False
            | PExprVar String    -- c
@@ -67,5 +67,5 @@ data PExpr = PExprList [PExpr] -- a++, a=1, k[10].x=x+2 (could be empty)
            | PExprConvType PType PExpr -- (Object)s
            | PExprAssign (Maybe PExpr) String PExpr -- i = 5
            | PExprNewObj String              -- new Hi()
-           | PExprNewArr PType [Int] -- new int[35]
+           | PExprNewArr PType [PExpr] -- new int[35]
              deriving (Eq, Show)

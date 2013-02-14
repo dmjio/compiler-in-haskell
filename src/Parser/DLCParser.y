@@ -130,33 +130,31 @@ VarDefItem : var "=" Expr         { ($1, Just $3) }
 Type : kw_void { PVoid }
      | ValType { $1 }
 
-ValType : kw_int          { PInt }
-        | kw_byte         { PByte }
-        | kw_bool         { PBool }
-        | var             { PObjClass $1 }
-        | var "[" "]"     { PArray (PObjClass $1) }
-        | ValType "[" "]" { PArray $1 }
+ValType : kw_int ArrDepth         { makeArrType PInt $2 }
+        | kw_byte ArrDepth        { makeArrType PByte $2 }
+        | kw_bool ArrDepth        { makeArrType PBool $2}
+        | var ArrDepth            { makeArrType (PObjClass $1) $2 }
+
+ArrDepth : "[" "]" ArrDepth { 1 + $3 }
+         | {- empty -}      { 0 }
 
 BasicValType : kw_int   { PInt }
              | kw_byte  { PByte }
              | kw_bool  { PBool }
              | var      { PObjClass $1 }
 
-ControlStmtBody : Sentence             { [$1]   }
-                | "{" SentenceList "}" { $2   }
-                | "{" Sentence "}"     { [$2] }
-                | ";"                  { [] }
-
-Stmt : VarDef ";"                                                 { PStmtVarDef $1 }
+Stmt : VarDef                                                     { PStmtVarDef $1 }
      | kw_print "(" ExprList ")" ";"                              { PStmtPrint  $3 }
      | kw_print "(" ")" ";"                                       { PStmtPrint  [] }
-     | kw_if "(" Expr ")" ControlStmtBody                         { PStmtIf $3 $5 [] }
-     | kw_if "(" Expr ")" ControlStmtBody kw_else ControlStmtBody { PStmtIf $3 $5 $7 }
-     | kw_for "(" Expr ";" Expr ";" Expr ")" ControlStmtBody      { PStmtFor (Right $3) $5 $7 $9 }
-     | kw_for "(" VarDef ";" Expr ";" Expr ")" ControlStmtBody
-                                                   { PStmtFor (Left $ PStmtVarDef $3) $5 $7 $9}
-     | kw_while "(" Expr ")" ControlStmtBody                      { PStmtWhile $3 $5 }
-     | kw_do ControlStmtBody kw_while "(" Expr ")" ";"            { PStmtDoWhile $2 $5 }
+     | kw_if "(" Expr ")" "{" SentenceList "}"                    { PStmtIf $3 $6 [] }
+     | kw_if "(" Expr ")" "{" SentenceList "}" kw_else "{" SentenceList "}"
+                                                                  { PStmtIf $3 $6 $10 }
+     | kw_for "(" Expr ";" Expr ";" Expr ")" "{" SentenceList "}" 
+                                                              { PStmtFor (Right $3) $5 $7 $10 }
+     | kw_for "(" VarDef ";" Expr ";" Expr ")" "{" SentenceList "}" 
+                                                  { PStmtFor (Left $ PStmtVarDef $3) $5 $7 $10}
+     | kw_while "(" Expr ")" "{" SentenceList "}"                 { PStmtWhile $3 $6 }
+     | kw_do "{" SentenceList "}" kw_while "(" Expr ")" ";"       { PStmtDoWhile $3 $7 }
      | kw_return Expr ";"                                         { PStmtReturn $2 }
 
 ExprList : Expr "," ExprList { $1:$3 }
@@ -187,7 +185,7 @@ CompoundExpr : Expr "." var "(" ExprList ")"  %prec FCALL  { PExprFunCall (Just 
              | Expr ">=" Expr                              { PExprGeq $1 $3 }
              | Expr "<" Expr                               { PExprLe $1 $3 }
              | Expr ">" Expr                               { PExprGe $1 $3 }
-             | Expr "[" Expr "]"            %prec ARR_SUB  { PExprArrAccess $1 $3 }
+             | Expr NewArrArgs              %prec ARR_SUB  { PExprArrAccess $1 $2 }
              | Expr "." var                                { PExprDotAccess $1 $3 }
              | "(" ValType ")" Expr           %prec TCAST  { PExprConvType $2 $4 }
              | Expr "." var "=" Expr                       { PExprAssign (Just $1) $3 $5 }
@@ -205,9 +203,13 @@ Expr : bool                                        { PExprBool $1 }
      | kw_null                                     { PExprNull }
      | CompoundExpr                                { $1 }
 
-NewArrArgs : "[" int "]" NewArrArgs { $2:$4 }
-           | "[" int "]"            { [$2] }
+NewArrArgs : "[" Expr "]" NewArrArgs { $2:$4 }
+           | "[" Expr "]"            { [$2] }
 {
+makeArrType :: PType -> Int -> PType
+makeArrType t 0 = t
+makeArrType t n = makeArrType (PArray t) (n-1)
+
 run_parser :: String -> PRoot
 run_parser = calc . alexScanTokens
 

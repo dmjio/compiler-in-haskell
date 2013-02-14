@@ -3,7 +3,7 @@ class __DL_Array { // implies "extends Object"
     protected int __dl_length;
     protected int __dl_bsize;
 
-    protected init() { // hide constructor.
+    protected void init() { // hide constructor.
         // implies super.init()
         // return; // return with no argument
     }
