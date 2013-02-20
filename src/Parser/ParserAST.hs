@@ -20,9 +20,6 @@ data PClassAccessModifier = PPublic | PProtected | PPrivate deriving (Eq, Show)
 
 data PType = PVoid | PInt | PInt32 | PByte | PBool | PObjClass String | PArray PType
              deriving (Eq, Show)
--- data PType = PVoid | PValType deriving (Eq, Show)
--- data PBasicValType = PInt | PInt32 | PByte | PBool | PObjClass String deriving (Eq, Show)
--- data PValType = PBasicValType | PArray PValType deriving (Eq, Show)
 
 type PSentence = Either PStmt PExpr
 
@@ -41,9 +38,9 @@ data PExpr = PExprList [PExpr] -- a++, a=1, k[10].x=x+2 (could be empty)
            | PExprMul PExpr PExpr   -- a * b
            | PExprDiv PExpr PExpr   -- a / b
            | PExprNeg PExpr         -- -a
-           | PExprAnd PExpr PExpr   -- a and b <= a && b
-           | PExprOr PExpr PExpr    -- a or b  <= a || b
-           | PExprNot PExpr         -- not a   <= !a
+           | PExprAnd PExpr PExpr   -- a and b  <--  a && b
+           | PExprOr PExpr PExpr    -- a or b   <--  a || b
+           | PExprNot PExpr         -- not a    <--  !a
            | PExprIncV PExpr        -- ++i
            | PExprDecV PExpr        -- --i
            | PExprVInc PExpr        -- i++
@@ -65,7 +62,7 @@ data PExpr = PExprList [PExpr] -- a++, a=1, k[10].x=x+2 (could be empty)
            | PExprChar Int      -- '\n'
            | PExprNull          -- null
            | PExprConvType PType PExpr -- (Object)s
-           | PExprAssign PExpr String PExpr -- i = 5; i[10] = 5; i.v = 5; NOT i.getX() = 5;
+           | PExprAssign PExpr PExpr -- i = 5; i[10] = 5; i.v = 5; NOT i.getX() = 5;
            | PExprNewObj String              -- new Hi()
            | PExprNewArr PType [PExpr] -- new int[35]
              deriving (Eq, Show)
