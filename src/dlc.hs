@@ -5,8 +5,10 @@ import System.Environment(getArgs)
 import Scanner.DLCScanner(alexScanTokens, token_print)
 import Parser.DLCParser(run_parser)
 
-import System.Directory(doesDirectoryExist, doesFileExist, getModificationTime)
+import System.Directory(doesDirectoryExist, doesFileExist, getModificationTime, createDirectory)
 import System.FilePath.Posix(joinPath)
+
+import System.FilePath.Glob(compile, globDir)
 
 testScanner :: IO ()
 testScanner = getArgs >>= (return . head) >>= readFile >>= (token_print . alexScanTokens)
@@ -35,17 +37,34 @@ fNewerThan f1 f2 = do
         f2_mod_t <- getModificationTime f2
         return (f1_mod_t < f2_mod_t)
 
+-- return path of all *.dl files under the first level of the given directories.
+-- e.g., getDLSourceInDir ["src/Runtime"] ===> ["src/Runtime/__DL_Array.dl", "...Object.dl"]
+--       (files are given in full absolute path.)
+-- FIXME: globDir will not expand the user directory symbol, "~".
+getDLSourceInDir :: [FilePath] -> IO ([FilePath])
+getDLSourceInDir fpList =
+    mapM (\fp -> do {(r,_) <- globDir [compile "*.dl"] fp; return $ concat r}) fpList >>=
+    (return . concat)
+
 buildDir :: String -> IO ()
 buildDir dirName =
     let
         mainPath = joinPath [dirName, "main.dl"]
         buildPath = joinPath [dirName, "build"]
     in do
-        -- TODO: parse all .dl files in dirName and Runtime;
-        --       save them in a list, and use DLTypeChecking
-        --       to get the huge final assembly file.
-        dirExists <- doesDirectoryExist buildPath
-        putStrLn buildPath
+        fList <- getDLSourceInDir [dirName, "src/Runtime"]
+        -- putStrLn $ show fList -- DEBUG
+        pRootList <- mapM (\fp -> (readFile fp >>= (return . run_parser))) fList >>=
+                     (return . concat)
+        putStrLn $ show pRootList -- DEBUG
+        -- -- TODO: parse all .dl files in dirName and Runtime;
+        -- --       save them in a list, and use DLTypeChecking
+        -- --       to get the huge final assembly file.
+        -- dirExists <- doesDirectoryExist buildPath
+        -- if not dirExists then
+        --     createDirectory buildPath
+        -- else
+        --     return ()
 
 buildDirLauncher :: IO ()
 buildDirLauncher = do
@@ -54,13 +73,13 @@ buildDirLauncher = do
     then pUsage
     else do
         dirExists <- doesDirectoryExist $ head args
-        mainExists <- doesFileExist $ joinPath [(head args), "main.dl"]
-        if not (dirExists && mainExists) then
+        dlFList <- getDLSourceInDir [head args] -- we need at least one .dl file
+        if not (dirExists && length dlFList > 0) then
             pUsage
         else
             buildDir $ head args
 
 main :: IO ()
 -- main = testScanner
--- main = testParser
-main = buildDirLauncher
+main = testParser
+-- main = buildDirLauncher
