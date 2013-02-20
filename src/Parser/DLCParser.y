@@ -160,46 +160,48 @@ Stmt : VarDef                                                     { PStmtVarDef 
 ExprList : Expr "," ExprList { $1:$3 }
          | Expr              { [$1]  }
 
-CompoundExpr : Expr "." var "(" ExprList ")"  %prec FCALL  { PExprFunCall (Just $1) $3 $5 }
-             | Expr "." var "(" ")"           %prec FCALL  { PExprFunCall (Just $1) $3 [] }
-             | var "(" ExprList ")"           %prec FCALL  { PExprFunCall Nothing $1 $3 }
-             | var "(" ")"                    %prec FCALL  { PExprFunCall Nothing $1 [] }
+CompoundExpr :: { PTExpr }
+             : Expr "." var "(" ExprList ")"  %prec FCALL  { et (PExprFunCall (Just $1) $3 $5)}
+             | Expr "." var "(" ")"           %prec FCALL  { et (PExprFunCall (Just $1) $3 [])}
+             | var "(" ExprList ")"           %prec FCALL  { et (PExprFunCall Nothing $1 $3)}
+             | var "(" ")"                    %prec FCALL  { et (PExprFunCall Nothing $1 [])}
              | "(" CompoundExpr ")"                        { $2 }
-             | Expr "+" Expr                               { PExprAdd $1 $3 }
-             | Expr "-" Expr                               { PExprMin $1 $3 }
-             | Expr "*" Expr                               { PExprMul $1 $3 }
-             | Expr "/" Expr                               { PExprDiv $1 $3 }
-             | "-" Expr                         %prec NEG  { PExprNeg $2 }
-             | Expr kw_and Expr                            { PExprAnd $1 $3 }
-             | Expr kw_or  Expr                            { PExprOr  $1 $3 }
-             | kw_not Expr                                 { PExprNot $2 }
-             | "++" Expr                 %prec PREFIX_INC  { PExprIncV $2 }
-             | "--" Expr                 %prec PREFIX_DEC  { PExprDecV $2 }
-             | Expr "++"                                   { PExprVInc $1 }
-             | Expr "--"                                   { PExprVDec $1 }
-             | Expr "+=" Expr                              { PExprIncBy $1 $3 }
-             | Expr "-=" Expr                              { PExprDecBy $1 $3 }
-             | Expr "==" Expr                              { PExprEq $1 $3 }
-             | Expr "!=" Expr                              { PExprNeq $1 $3 }
-             | Expr "<=" Expr                              { PExprLeq $1 $3 }
-             | Expr ">=" Expr                              { PExprGeq $1 $3 }
-             | Expr "<" Expr                               { PExprLe $1 $3 }
-             | Expr ">" Expr                               { PExprGe $1 $3 }
-             | Expr "[" Expr "]"                           { PExprArrAccess $1 $3 }
-             | Expr "." var                                { PExprDotAccess $1 $3 }
-             | "(" ValType ")" Expr           %prec TCAST  { PExprConvType $2 $4 }
-             | Expr "=" Expr                               { PExprAssign $1 $3 }
-             | kw_new var "(" ")"                          { PExprNewObj $2 }
-             | kw_new BasicValType NewArrArgs              { PExprNewArr $2 $3 }
+             | Expr "+" Expr                               { et (PExprAdd $1 $3)}
+             | Expr "-" Expr                               { et (PExprMin $1 $3)}
+             | Expr "*" Expr                               { et (PExprMul $1 $3)}
+             | Expr "/" Expr                               { et (PExprDiv $1 $3)}
+             | "-" Expr                         %prec NEG  { et (PExprNeg $2)}
+             | Expr kw_and Expr                            { et (PExprAnd $1 $3)}
+             | Expr kw_or  Expr                            { et (PExprOr  $1 $3)}
+             | kw_not Expr                                 { et (PExprNot $2)}
+             | "++" Expr                 %prec PREFIX_INC  { et (PExprIncV $2)}
+             | "--" Expr                 %prec PREFIX_DEC  { et (PExprDecV $2)}
+             | Expr "++"                                   { et (PExprVInc $1)}
+             | Expr "--"                                   { et (PExprVDec $1)}
+             | Expr "+=" Expr                              { et (PExprIncBy $1 $3)}
+             | Expr "-=" Expr                              { et (PExprDecBy $1 $3)}
+             | Expr "==" Expr                              { et (PExprEq $1 $3)}
+             | Expr "!=" Expr                              { et (PExprNeq $1 $3)}
+             | Expr "<=" Expr                              { et (PExprLeq $1 $3)}
+             | Expr ">=" Expr                              { et (PExprGeq $1 $3)}
+             | Expr "<" Expr                               { et (PExprLe $1 $3)}
+             | Expr ">" Expr                               { et (PExprGe $1 $3)}
+             | Expr "[" Expr "]"                           { et (PExprArrAccess $1 $3)}
+             | Expr "." var                                { et (PExprDotAccess $1 $3)}
+             | "(" ValType ")" Expr           %prec TCAST  { et (PExprConvType $2 $4)}
+             | Expr "=" Expr                               { et (PExprAssign $1 $3)}
+             | kw_new var "(" ")"                          { et (PExprNewObj $2)}
+             | kw_new BasicValType NewArrArgs              { et (PExprNewArr $2 $3)}
 
-Expr : bool                                        { PExprBool $1 }
-     | var                                         { PExprVar $1 }
-     | kw_self                                     { PExprVar "self" }
-     | kw_super                                    { PExprVar "super" }
-     | str                                         { PExprStr $1 }
-     | int                                         { PExprInt $1 }
-     | char                                        { PExprChar $1 }
-     | kw_null                                     { PExprNull }
+Expr :: { PTExpr }
+     : bool                                        { et (PExprBool $1)}
+     | var                                         { et (PExprVar $1)}
+     | kw_self                                     { et (PExprVar "self")}
+     | kw_super                                    { et (PExprVar "super")}
+     | str                                         { et (PExprStr $1)}
+     | int                                         { et (PExprInt $1)}
+     | char                                        { et (PExprChar $1)}
+     | kw_null                                     { et (PExprNull)}
      | CompoundExpr                                { $1 }
 
 NewArrArgs : "[" Expr "]" NewArrArgs { $2:$4 }
@@ -211,6 +213,9 @@ makeArrType t n = makeArrType (PArray t) (n-1)
 
 run_parser :: String -> PRoot
 run_parser = calc . alexScanTokens
+
+et :: PExpr -> PTExpr
+et expr = (PNull, expr)
 
 happyError :: [Token] -> a
 happyError tks = error ("Parse error at " ++ lcn ++ "\n")
