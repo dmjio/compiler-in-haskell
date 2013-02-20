@@ -43,6 +43,8 @@ class __DL_Array { // implies "extends Object"
 }
 
 class __DL_RefArray extends __DL_Array {
+    // FIXME: what about set()?
+
     protected void __dl_decref() {
         if (self.__dl_ref == 0) {
             for (int i = 0; i < self.__dl_length; i++) {

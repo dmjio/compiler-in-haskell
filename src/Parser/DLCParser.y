@@ -75,7 +75,7 @@ import Parser.ParserAST
 %left "+" "-"
 %left "*" "/"
 %right kw_not PREFIX_INC PREFIX_DEC NEG TCAST kw_new
-%left "." FCALL ARR_SUB SUFFIX_INC SUFFIX_DEC
+%left "." FCALL "++" "--"
 
 %%
 
@@ -175,8 +175,8 @@ CompoundExpr : Expr "." var "(" ExprList ")"  %prec FCALL  { PExprFunCall (Just 
              | kw_not Expr                                 { PExprNot $2 }
              | "++" Expr                 %prec PREFIX_INC  { PExprIncV $2 }
              | "--" Expr                 %prec PREFIX_DEC  { PExprDecV $2 }
-             | Expr "++"                 %prec SUFFIX_INC  { PExprVInc $1 }
-             | Expr "--"                 %prec SUFFIX_DEC  { PExprVDec $1 }
+             | Expr "++"                                   { PExprVInc $1 }
+             | Expr "--"                                   { PExprVDec $1 }
              | Expr "+=" Expr                              { PExprIncBy $1 $3 }
              | Expr "-=" Expr                              { PExprDecBy $1 $3 }
              | Expr "==" Expr                              { PExprEq $1 $3 }
@@ -185,11 +185,10 @@ CompoundExpr : Expr "." var "(" ExprList ")"  %prec FCALL  { PExprFunCall (Just 
              | Expr ">=" Expr                              { PExprGeq $1 $3 }
              | Expr "<" Expr                               { PExprLe $1 $3 }
              | Expr ">" Expr                               { PExprGe $1 $3 }
-             | Expr NewArrArgs              %prec ARR_SUB  { PExprArrAccess $1 $2 }
+             | Expr "[" Expr "]"                           { PExprArrAccess $1 $3 }
              | Expr "." var                                { PExprDotAccess $1 $3 }
              | "(" ValType ")" Expr           %prec TCAST  { PExprConvType $2 $4 }
-             | Expr "." var "=" Expr                       { PExprAssign (Just $1) $3 $5 }
-             | var "=" Expr                                { PExprAssign Nothing $1 $3 }
+             | Expr "=" Expr                               { PExprAssign $1 $3 }
              | kw_new var "(" ")"                          { PExprNewObj $2 }
              | kw_new BasicValType NewArrArgs              { PExprNewArr $2 $3 }
 
