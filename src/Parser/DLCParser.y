@@ -75,7 +75,7 @@ import Parser.ParserAST
 %left "+" "-"
 %left "*" "/"
 %right kw_not PREFIX_INC PREFIX_DEC NEG TCAST kw_new
-%left "." FCALL "++" "--"
+%left "." "[" "]" FCALL "++" "--"
 
 %%
 
@@ -99,8 +99,8 @@ ClassMethodOrClassAttrDef : ClassMethodDef          { Left  $1 }
 ClassMethodDef : ClassAccessModifier kw_static MethodDef { ($1,  True, $3) }
                | ClassAccessModifier           MethodDef { ($1, False, $2) }
 
-ClassAttrDef : ClassAccessModifier kw_static VarDef { ($1,  True, $3) }
-             | ClassAccessModifier           VarDef { ($1, False, $2) }
+ClassAttrDef : ClassAccessModifier kw_static VarDef ";" { ($1,  True, $3) }
+             | ClassAccessModifier           VarDef ";" { ($1, False, $2) }
 
 ClassAccessModifier : kw_public    { Just PPublic }
                     | kw_protected { Just PProtected }
@@ -116,10 +116,10 @@ MethodDefArgList : Type var "," MethodDefArgList   { ($1, $2):$4 }
 SentenceList : Sentence SentenceList { $1:$2 }
              | {- empty -}           { [] }
 
-Sentence : Stmt     { Left  $1 }
-         | Expr ";" { Right $1 }
+Sentence : Expr ";" { Right $1 }
+         | Stmt     { Left  $1 }
 
-VarDef : Type VarDefItemList ";"  { ($1, $2) }
+VarDef : Type VarDefItemList      { ($1, $2) }
 
 VarDefItemList : VarDefItem "," VarDefItemList { $1:$3 }
                | VarDefItem                    { [$1]  }
@@ -132,8 +132,9 @@ Type : kw_void { PVoid }
 
 ValType : kw_int ArrDepth         { makeArrType PInt $2 }
         | kw_byte ArrDepth        { makeArrType PByte $2 }
-        | kw_bool ArrDepth        { makeArrType PBool $2}
-        | var ArrDepth            { makeArrType (PObjClass $1) $2 }
+        | kw_bool ArrDepth        { makeArrType PBool $2 }
+        | var                     { makeArrType (PObjClass $1) 0 }
+        | Expr "[" "]" ArrDepth   { makeArrType (PObjClass $ extractClassName $1) ($4 + 1) }
 
 ArrDepth : "[" "]" ArrDepth { 1 + $3 }
          | {- empty -}      { 0 }
@@ -143,7 +144,7 @@ BasicValType : kw_int   { PInt }
              | kw_bool  { PBool }
              | var      { PObjClass $1 }
 
-Stmt : VarDef                                                     { PStmtVarDef $1 }
+Stmt : VarDef ";"                                                 { PStmtVarDef $1 }
      | kw_print "(" ExprList ")" ";"                              { PStmtPrint  $3 }
      | kw_print "(" ")" ";"                                       { PStmtPrint  [] }
      | kw_if "(" Expr ")" "{" SentenceList "}"                    { PStmtIf $3 $6 [] }
@@ -186,7 +187,7 @@ CompoundExpr :: { PTExpr }
              | Expr ">=" Expr                              { et (PExprGeq $1 $3)}
              | Expr "<" Expr                               { et (PExprLe $1 $3)}
              | Expr ">" Expr                               { et (PExprGe $1 $3)}
-             | Expr "[" Expr "]"                           { et (PExprArrAccess $1 $3)}
+             | Expr "[" Expr "]"                           { et (PExprArrAccess $1 $3) }
              | Expr "." var                                { et (PExprDotAccess $1 $3)}
              | "(" ValType ")" Expr           %prec TCAST  { et (PExprConvType $2 $4)}
              | Expr "=" Expr                               { et (PExprAssign $1 $3)}
@@ -204,9 +205,15 @@ Expr :: { PTExpr }
      | kw_null                                     { et (PExprNull)}
      | CompoundExpr                                { $1 }
 
-NewArrArgs : "[" Expr "]" NewArrArgs { $2:$4 }
-           | "[" Expr "]"            { [$2] }
+NewArrArgs : "[" Expr "]"            { [$2] }
+           | NewArrArgs "[" Expr "]" { $1 ++ [$3] } 
+
 {
+extractClassName :: PTExpr -> String
+extractClassName (_, (PExprVar s)) = s
+-- -- for the rest patterns, let it fail...
+-- -- (we need to come up with a way to report the error though)
+
 makeArrType :: PType -> Int -> PType
 makeArrType t 0 = t
 makeArrType t n = makeArrType (PArray t) (n-1)
@@ -222,7 +229,7 @@ happyError tks = error ("Parse error at " ++ lcn ++ "\n")
 	where
 	lcn = 	case tks of
 		  [] -> "end of file"
-		  tk:_ -> "line " ++ show l ++ ", column " ++ show c
+		  tk:_ -> "line " ++ show l ++ ", column " ++ show c ++ ", token <" ++ show tk ++ ">"
 			where
 			AlexPn _ l c = token_posn tk
 }

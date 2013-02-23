@@ -67,8 +67,7 @@ int main() {
         parr[i] = new Point();
     }
 
-    long i = 0;
-    for (i = 0; i < parr.length(); i++) {
+    for (int i = 0; i < parr.length(); i++) {
         parr[i].setP(i, i);  // parr.get(0).setP(i, i);
         parr[i].dumpPoint(); // parr.get(0).dumpPoint();
     }

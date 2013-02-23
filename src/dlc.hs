@@ -81,5 +81,5 @@ buildDirLauncher = do
 
 main :: IO ()
 -- main = testScanner
-main = testParser
--- main = buildDirLauncher
+-- main = testParser
+main = buildDirLauncher
