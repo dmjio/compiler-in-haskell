@@ -10,6 +10,9 @@ import System.FilePath.Posix(joinPath)
 
 import System.FilePath.Glob(compile, globDir)
 
+import DLC.ASTTransformer
+import DLC.Job
+
 testScanner :: IO ()
 testScanner = getArgs >>= (return . head) >>= readFile >>= (token_print . alexScanTokens)
 
@@ -56,7 +59,10 @@ buildDir dirName =
         -- putStrLn $ show fList -- DEBUG
         pRootList <- mapM (\fp -> (readFile fp >>= (return . run_parser))) fList >>=
                      (return . concat)
-        putStrLn $ show pRootList -- DEBUG
+        -- putStrLn $ show pRootList -- DEBUG
+        case transformParserAST pRootList of
+            (Ok tr) -> putStrLn $ show tr
+            (ErrorLog eLog) -> putStrLn ("error!!! " ++ eLog)
         -- -- TODO: parse all .dl files in dirName and Runtime;
         -- --       save them in a list, and use DLTypeChecking
         -- --       to get the huge final assembly file.

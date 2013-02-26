@@ -161,7 +161,7 @@ Stmt : VarDef ";"                                                 { PStmtVarDef 
 ExprList : Expr "," ExprList { $1:$3 }
          | Expr              { [$1]  }
 
-CompoundExpr :: { PTExpr }
+CompoundExpr :: { PExpr }
              : Expr "." var "(" ExprList ")"  %prec FCALL  { et (PExprFunCall (Just $1) $3 $5)}
              | Expr "." var "(" ")"           %prec FCALL  { et (PExprFunCall (Just $1) $3 [])}
              | var "(" ExprList ")"           %prec FCALL  { et (PExprFunCall Nothing $1 $3)}
@@ -194,7 +194,7 @@ CompoundExpr :: { PTExpr }
              | kw_new var "(" ")"                          { et (PExprNewObj $2)}
              | kw_new BasicValType NewArrArgs              { et (PExprNewArr $2 $3)}
 
-Expr :: { PTExpr }
+Expr :: { PExpr }
      : bool                                        { et (PExprBool $1)}
      | var                                         { et (PExprVar $1)}
      | kw_self                                     { et (PExprVar "self")}
@@ -209,8 +209,9 @@ NewArrArgs : "[" Expr "]"            { [$2] }
            | NewArrArgs "[" Expr "]" { $1 ++ [$3] } 
 
 {
-extractClassName :: PTExpr -> String
-extractClassName (_, (PExprVar s)) = s
+extractClassName :: PExpr -> String
+-- extractClassName (_, (PExprVar s)) = s
+extractClassName (PExprVar s) = s
 -- -- for the rest patterns, let it fail...
 -- -- (we need to come up with a way to report the error though)
 
@@ -221,8 +222,10 @@ makeArrType t n = makeArrType (PArray t) (n-1)
 run_parser :: String -> PRoot
 run_parser = calc . alexScanTokens
 
-et :: PExpr -> PTExpr
-et expr = (PNull, expr)
+-- et :: PExpr -> PTExpr
+-- et expr = (PNull, expr)
+et :: a -> a
+et = id
 
 happyError :: [Token] -> a
 happyError tks = error ("Parse error at " ++ lcn ++ "\n")
