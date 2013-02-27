@@ -62,7 +62,7 @@ buildDir dirName =
                      (return . concat)
         -- putStrLn $ show pRootList -- DEBUG
         case transformParserAST pRootList of
-            (Ok tr) -> prettyPrintTransResult 2 tr
+            (Ok tr) -> prettyPrintTransResult 0 tr
             (ErrorLog eLog) -> putStrLn ("error!!! " ++ eLog)
         -- -- TODO: parse all .dl files in dirName and Runtime;
         -- --       save them in a list, and use DLTypeChecking

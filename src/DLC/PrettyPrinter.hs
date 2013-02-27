@@ -7,9 +7,9 @@ import Data.Char (chr)
 import Data.Map
 
 prettyPrintTransResult :: Int -> TransResult -> IO ()
-prettyPrintTransResult indentLevel (cdMap, mdMap) = do
-    mapM_ (\cName -> prettyPrintClassDef 0 (cdMap ! cName)) (keys cdMap)
-    mapM_ (\mName -> prettyPrintMethodDef 0 (mdMap ! mName)) (keys mdMap)
+prettyPrintTransResult il (cdMap, mdMap) = do
+    mapM_ (\cName -> prettyPrintClassDef il (cdMap ! cName)) (keys cdMap)
+    mapM_ (\mName -> prettyPrintMethodDef il (mdMap ! mName)) (keys mdMap)
 
 prettyPrintClassDef :: Int -> TClassDef -> IO ()
 prettyPrintClassDef il (cName, superClassName, caList, cmList) = do
