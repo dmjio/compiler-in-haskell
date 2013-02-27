@@ -131,9 +131,9 @@ transStmt (PStmtIf c b1 b2) =
     [TStmtIf (transExpr c) (transSentenceList b1) (transSentenceList b2)]
 transStmt (PStmtFor (Left (PStmtVarDef (tp, vList))) e2 e3 b) =
     let tp' = transType tp
-        vList' = Prelude.map (\(n, maybePExpr) -> (n, tp', transMaybeExpr tp' maybePExpr)) vList
+        vList' = Prelude.map (\(n, maybePExpr) -> (n, transMaybeExpr tp' maybePExpr)) vList
         b' = transSentenceList b
-    in  [TStmtFor (Right vList') (transExpr e2) (transExpr e3) b']
+    in  [TStmtFor (Right (tp', vList')) (transExpr e2) (transExpr e3) b']
 transStmt (PStmtFor (Right e1) e2 e3 b) =
     [TStmtFor (Left $ transExpr e1) (transExpr e2) (transExpr e3) (transSentenceList b)]
 transStmt (PStmtWhile e b) = [TStmtWhile (transExpr e) (transSentenceList b)]

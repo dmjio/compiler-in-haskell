@@ -11,6 +11,7 @@ import System.FilePath.Posix(joinPath)
 import System.FilePath.Glob(compile, globDir)
 
 import DLC.ASTTransformer
+import DLC.PrettyPrinter
 import DLC.Job
 
 testScanner :: IO ()
@@ -61,7 +62,7 @@ buildDir dirName =
                      (return . concat)
         -- putStrLn $ show pRootList -- DEBUG
         case transformParserAST pRootList of
-            (Ok tr) -> putStrLn $ show tr
+            (Ok tr) -> prettyPrintTransResult 2 tr
             (ErrorLog eLog) -> putStrLn ("error!!! " ++ eLog)
         -- -- TODO: parse all .dl files in dirName and Runtime;
         -- --       save them in a list, and use DLTypeChecking

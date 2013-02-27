@@ -28,7 +28,7 @@ data TType = TVoid | TInt | TInt32 | TByte | TBool | TClass String
 data TStmt = TStmtVarDef TVarDef
            | TStmtPrint TExpr
            | TStmtIf TExpr [TBodyStmt] [TBodyStmt]
-           | TStmtFor (Either TExpr [(String, TType, TExpr)]) TExpr TExpr [TBodyStmt]
+           | TStmtFor (Either TExpr (TType, [(String, TExpr)])) TExpr TExpr [TBodyStmt]
            | TStmtWhile TExpr [TBodyStmt]
            | TStmtDoWhile [TBodyStmt] TExpr
            | TStmtReturn TExpr
