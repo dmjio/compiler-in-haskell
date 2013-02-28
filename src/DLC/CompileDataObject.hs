@@ -17,6 +17,33 @@ type CDO = (CDObjInfo,
             Map String TMethodDef,
             Map String CDFuncSignature) -- C bridges
 
+cdoGetClassMethodTable :: CDO -> String -> [String]
+cdoGetClassMethodTable cdo cName =
+    case cdo of
+        (oi, _, _, _) -> case (oi ! cName) of
+            (_, (mt1, mt2), _) -> mt1 ++ mt2
+cdoGetObjSize :: CDO -> String -> Int
+cdoGetObjSize cdo cName =
+    case cdo of
+        (oi, _, _, _) -> case (oi ! cName) of
+            (s, _, _) -> s
+cdoGetAttrOffset :: CDO -> String -> String -> Int
+cdoGetAttrOffset cdo cName aName =
+    case cdo of
+        (oi, _, _, _) -> case (oi ! cName) of
+            (_, _, m) -> m ! aName
+cdoGetSuperClass :: CDO -> String -> String
+cdoGetSuperClass cdo cName =
+    case cdo of
+        (_, cDefMap, _, _) -> case (cDefMap ! cName) of
+            (_, sc, _, _) -> sc
+cdoGetClassDef :: CDO -> String -> TClassDef
+cdoGetClassDef cdo cName =
+    case cdo of (_, cDefMap, _, _) -> cDefMap ! cName
+cdoGetMethodDef :: CDO -> String -> TMethodDef
+cdoGetMethodDef cdo mName =
+    case cdo of (_, _, mDefMap, _) -> mDefMap ! mName
+
 prettyPrintCDO :: CDO -> IO ()
 prettyPrintCDO (oi, _, _, _) = do
     mapM_ (\cName -> putStrLn $ cName ++ " => " ++ (show (oi ! cName))) (keys oi)
