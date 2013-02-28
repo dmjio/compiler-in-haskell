@@ -4,6 +4,7 @@ where
 
 import Data.Map
 import Control.Monad(foldM)
+import Text.Regex.Posix hiding (empty)
 
 import Parser.ParserAST
 import DLC.Job
@@ -55,9 +56,12 @@ transClassDef (className, superClassName, classBody) =
                             (Just x) -> x
         t = foldM transClassBody ([], []) classBody
     in
-        case t of
-            Ok (mDefList, aDefList) -> Ok (className, superClassName', aDefList, mDefList)
-            (ErrorLog eLog)         -> ErrorLog eLog
+        -- if not ((className =~ "^_*[A-Z][a-zA-Z0-9_]*$") :: Bool) then
+        --     ErrorLog $ "Illegal class name: " ++ className
+        -- else
+            case t of
+                Ok (mDefList, aDefList) -> Ok (className, superClassName', aDefList, mDefList)
+                (ErrorLog eLog)         -> ErrorLog eLog
 
 transClassBody :: ([TClassMethodDef], [TClassAttrDef]) ->
                   Either PClassMethodDef PClassAttrDef ->

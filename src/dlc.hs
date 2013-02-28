@@ -13,6 +13,7 @@ import System.FilePath.Glob(compile, globDir)
 import DLC.ASTTransformer
 import DLC.PrettyPrinter
 import DLC.Job
+import DLC.CompileDataObject
 
 testScanner :: IO ()
 testScanner = getArgs >>= (return . head) >>= readFile >>= (token_print . alexScanTokens)
@@ -57,13 +58,21 @@ buildDir dirName =
         buildPath = joinPath [dirName, "build"]
     in do
         fList <- getDLSourceInDir [dirName, "src/Runtime"]
-        -- putStrLn $ show fList -- DEBUG
+        -- putStrLn $ show fList -- DEBUG: list all files
         pRootList <- mapM (\fp -> (readFile fp >>= (return . run_parser))) fList >>=
                      (return . concat)
-        -- putStrLn $ show pRootList -- DEBUG
-        case transformParserAST pRootList of
-            (Ok tr) -> prettyPrintTransResult 0 tr
-            (ErrorLog eLog) -> putStrLn ("error!!! " ++ eLog)
+        -- putStrLn $ show pRootList -- DEBUG: print the raw data structure
+        -- 
+        -- DEBUG: pretty print
+        -- case transformParserAST pRootList of
+        --     (Ok tr) -> prettyPrintTransResult 0 tr
+        --     (ErrorLog eLog) -> putStrLn ("error!!! " ++ eLog)
+        --  
+        -- DEBUG: show CDO
+        case transformParserAST pRootList >>= genCDO of
+            (Ok cdo) -> prettyPrintCDO cdo
+            (ErrorLog e) -> putStrLn ("error!!! " ++ e)
+
         -- -- TODO: parse all .dl files in dirName and Runtime;
         -- --       save them in a list, and use DLTypeChecking
         -- --       to get the huge final assembly file.

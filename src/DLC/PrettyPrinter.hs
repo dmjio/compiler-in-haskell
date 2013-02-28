@@ -87,7 +87,7 @@ ppBody il b =
         (TBSExpr ep) -> do {indent il; ppExpr ep; putStrLn ";"}
     
 ppBodyList :: Int -> [TBodyStmt] -> IO ()
-ppBodyList _ [] = putStrLn ""
+-- ppBodyList _ [] = putStrLn ""
 ppBodyList il bList = mapM_ (ppBody il) bList
 
 ppStmt :: Int -> TStmt -> IO ()
@@ -102,7 +102,7 @@ ppStmt il st = do
             putStrLn ") {"
             ppBodyList (il+1) b1
             indent il
-            putStr "} else {"
+            putStrLn "} else {"
             ppBodyList (il+1) b2
             indent il
             putStrLn "}"
