@@ -2,10 +2,11 @@ module DLC.CompileDataObject
     (CDO, CDFuncSignature, genCDO, prettyPrintCDO,
      cdoGetClasses, cdoGetMethods,
      cdoGetObjSize, cdoGetClassMethodTable, cdoGetAttrOffset,
-     cdoGetSuperClass, cdoGetClassDef, cdoGetMethodDef)
+     cdoGetSuperClass, cdoGetClassDef, cdoGetMethodDef, cdoGetClassMethodDef)
 where
 
 import Data.Map hiding (map, foldl, filter)
+import Data.List (find)
 
 import DLC.TAST
 import DLC.Job
@@ -52,6 +53,10 @@ cdoGetClassDef cdo cName =
 cdoGetMethodDef :: CDO -> String -> TMethodDef
 cdoGetMethodDef cdo mName =
     case cdo of (_, _, mDefMap, _) -> mDefMap ! mName
+cdoGetClassMethodDef :: CDO -> String -> String -> Maybe TClassMethodDef
+cdoGetClassMethodDef cdo cName mName =
+    case cdoGetClassDef cdo cName of
+        (_, _, _, cmDefList) -> find (\(_, _, (m, _, _, _)) -> m == mName) cmDefList
 
 prettyPrintCDO :: CDO -> IO ()
 prettyPrintCDO (oi, _, _, _) = do

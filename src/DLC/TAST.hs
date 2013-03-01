@@ -13,8 +13,8 @@ type TClassAttrDef = (TClassAccessModifier, Bool,     TVarDef)
 --               i       int =  0;
 type TVarDef = (String, TType, TExpr)
 
---                          public            int   f() {}
-type TClassMethodDef = (TClassAccessModifier, Bool, TMethodDef)
+--                          public            (static)   f() {}
+type TClassMethodDef = (TClassAccessModifier, Bool,    TMethodDef)
 
 --                  f       int     (a       bool)    {...}
 type TMethodDef = (String, TType, [(String, TType)], [TBodyStmt])
