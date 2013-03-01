@@ -1,5 +1,8 @@
 module DLC.CompileDataObject
-    (CDO, CDFuncSignature, genCDO, prettyPrintCDO)
+    (CDO, CDFuncSignature, genCDO, prettyPrintCDO,
+     cdoGetClasses, cdoGetMethods,
+     cdoGetObjSize, cdoGetClassMethodTable, cdoGetAttrOffset,
+     cdoGetSuperClass, cdoGetClassDef, cdoGetMethodDef)
 where
 
 import Data.Map hiding (map, foldl, filter)
@@ -16,6 +19,12 @@ type CDO = (CDObjInfo,
             Map String TClassDef,
             Map String TMethodDef,
             Map String CDFuncSignature) -- C bridges
+
+cdoGetClasses :: CDO -> [String]
+cdoGetClasses cdo = case cdo of (_, cDefMap, _, _) -> keys cDefMap
+
+cdoGetMethods :: CDO -> [String]
+cdoGetMethods cdo = case cdo of (_, _, mDefMap, _) -> keys mDefMap
 
 cdoGetClassMethodTable :: CDO -> String -> [String]
 cdoGetClassMethodTable cdo cName =

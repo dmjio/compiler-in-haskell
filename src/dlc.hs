@@ -9,11 +9,13 @@ import System.Directory(doesDirectoryExist, doesFileExist, getModificationTime, 
 import System.FilePath.Posix(joinPath)
 
 import System.FilePath.Glob(compile, globDir)
+import System.IO (stdout)
 
 import DLC.ASTTransformer
 import DLC.PrettyPrinter
 import DLC.Job
 import DLC.CompileDataObject
+import DLC.Compile
 
 testScanner :: IO ()
 testScanner = getArgs >>= (return . head) >>= readFile >>= (token_print . alexScanTokens)
@@ -69,9 +71,12 @@ buildDir dirName =
         --     (ErrorLog eLog) -> putStrLn ("error!!! " ++ eLog)
         --  
         -- DEBUG: show CDO
-        case transformParserAST pRootList >>= genCDO of
-            (Ok cdo) -> prettyPrintCDO cdo
-            (ErrorLog e) -> putStrLn ("error!!! " ++ e)
+        -- case transformParserAST pRootList >>= genCDO of
+        --     (Ok cdo) -> prettyPrintCDO cdo
+        --     (ErrorLog e) -> putStrLn ("error!!! " ++ e)
+        cdo <- case transformParserAST pRootList >>= genCDO of
+            (Ok _cdo) -> return _cdo
+        compileTo stdout cdo
 
         -- -- TODO: parse all .dl files in dirName and Runtime;
         -- --       save them in a list, and use DLTypeChecking
