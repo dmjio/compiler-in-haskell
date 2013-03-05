@@ -65,13 +65,14 @@ prettyPrintCDO (oi, _, _, _) = do
 
 cdoCBridges :: Map String CDFuncSignature
 cdoCBridges = fromList [
-    ("dlib_malloc",     (TInt,  [TInt])),
-    ("dlib_free",       (TVoid, [TInt])),
-    ("dlib_print_num",  (TVoid, [TInt])),
-    ("dlib_print_char", (TVoid, [TByte])),
-    ("dlib_arr_get",    (TInt,  [TInt, TInt, TInt])),
-    ("dlib_arr_set",    (TVoid, [TInt, TInt, TInt, TInt])),
-    ("dlib_memcpy",     (TVoid, [TInt, TInt, TInt]))]
+    ("__dlib_malloc",     (TInt,  [TInt])),
+    ("__dlib_free",       (TVoid, [TInt])),
+    ("__dlib_print_num",  (TVoid, [TInt])),
+    ("__dlib_print_char", (TVoid, [TByte])),
+    ("__dlib_print_bool", (TVoid, [TBool])),
+    ("__dlib_arr_get",    (TInt,  [TInt, TInt, TInt])),
+    ("__dlib_arr_set",    (TVoid, [TInt, TInt, TInt, TInt])),
+    ("__dlib_memcpy",     (TVoid, [TInt, TInt, TInt]))]
 
 -- topological sorting!
 tSortClasses :: Map String TClassDef -> [String]

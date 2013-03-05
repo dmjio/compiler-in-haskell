@@ -74,6 +74,7 @@ buildDir dirName =
         -- case transformParserAST pRootList >>= genCDO of
         --     (Ok cdo) -> prettyPrintCDO cdo
         --     (ErrorLog e) -> putStrLn ("error!!! " ++ e)
+        
         cdo <- case transformParserAST pRootList >>= genCDO of
             (Ok _cdo) -> return _cdo
         compileTo stdout cdo

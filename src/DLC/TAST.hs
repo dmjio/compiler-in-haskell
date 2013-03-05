@@ -24,7 +24,7 @@ data TBodyStmt = TBSStmt TStmt | TBSExpr TExpr deriving (Eq, Show)
 data TType = TVoid | TInt | TInt32 | TByte | TBool | TClass String 
            | TUnknown -- for C functions, and null. null will just be treated as 0.
            | TArray Int TType -- TArray 1 TBool: "TBool[]", the Int value should be >= 1.
-             deriving (Eq, Show)
+             deriving (Eq, Show, Ord)
 data TStmt = TStmtVarDef TVarDef
            | TStmtPrint TExpr
            | TStmtIf TExpr [TBodyStmt] [TBodyStmt]

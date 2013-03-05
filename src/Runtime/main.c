@@ -21,6 +21,14 @@ void dlib_print_char(char c) {
     printf("%c", c);
 }
 
+void dlib_print_bool(char b) {
+    if (b) {
+        printf("true");
+        return;
+    }
+    printf("false");
+}
+
 // this should not be used for now because our string(or byte[]) is not NUL-ended.
 // void dlib_print_str(char *s) {
 //     printf("%s", s);
