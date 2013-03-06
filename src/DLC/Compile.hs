@@ -2,8 +2,9 @@ module DLC.Compile
     (compileTo)
 where
 
-import Data.Map hiding (map, foldl, lookup)
+import Data.Map hiding (map, foldl)
 import Data.Set hiding (map, foldl)
+import Data.List (find)
 import System.IO (hPutStr, hPutStrLn, Handle)
 import Text.Regex.Posix
 
@@ -143,7 +144,7 @@ getIntTypeRank TByte = 1
 
 -- for assignment / function call
 canCoerceInto :: CDO -> TType -> TType -> Bool
-canCoerceInto _ TVoid TVoid = True
+-- canCoerceInto _ TVoid TVoid = True -- FIXME: MAYBE this should not be True.
 canCoerceInto _ TVoid _     = False
 canCoerceInto _ _     TVoid = False
 canCoerceInto _ TUnknown _ = True
@@ -218,7 +219,7 @@ getFuncReturnType cdo fName = -- fName: "C$func" or "func"
 
 cStmt :: CArg -> TStmt -> CArg
 cStmt ca@(cdo, d, t, j, su, mn) (TStmtVarDef (vName, tp, expr)) = -- int i = 1;
-    case lookup vName su of
+    case Prelude.lookup vName su of
         -- cExpr will push result of the expression onto the stack,
         -- so no need to pop the temporary variable out in assembly.
         Nothing -> let (_, d', t', j', su', _) = cExpr ca expr
@@ -329,13 +330,13 @@ getMethodSignature ((_, _, mDefMap, cmDefMap), _, _, _, _, _) mName =
     case Data.Map.lookup mName mDefMap of
         Just (_, retTp, argList, _) -> Just (retTp, map (\(_, t) -> t) argList)
         Nothing -> case Data.Map.lookup mName cmDefMap of
-                    Just (_, r) -> Just r
+                    Just r -> Just r
                     Nothing -> Nothing
 -- for class methods only (no matter static or not);
 -- includes "this" for non-static methods.
 getClassMethodSignature :: CArg -> String -> String ->
                            Maybe (String, TClassAccessModifier, Bool, TType, [TType])
-getClassMethodSignature ca@(_, cDefMap, _, _) cName mName =
+getClassMethodSignature ca@((_, cDefMap, _, _), _, _, _, _, _) cName mName =
     case Data.Map.lookup cName cDefMap of
         Nothing -> Nothing
         Just (_, supClass, _, mDefList) ->
@@ -347,8 +348,21 @@ getClassMethodSignature ca@(_, cDefMap, _, _) cName mName =
                            then Nothing
                            else getClassMethodSignature ca supClass mName
 
+-- return true iff cs != cb and cs is superclass of cb.
 isSuperClassOf :: CArg -> String -> String -> Bool
-isSuperClassOf -- FIXME
+isSuperClassOf ca@(cdo, _, _, _, _, _) cs cb =
+    if cs == cb
+    then False
+    else f' cdo cs cb
+    where
+        f' :: CDO -> String -> String -> Bool
+        f' cdo cs cb =
+            if cb == "Object"
+            then False
+            else let s = cdoGetSuperClass cdo cb
+                 in if s == cs
+                    then True
+                    else f' cdo cs s
 
 cExpr :: CArg -> TExpr -> CArg
 
@@ -380,7 +394,7 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                         else error $ "cannot call " ++ c ++ "$" ++ f ++ " inside " ++ cf
         Just e ->
             let (eIsClassName, eClassName) = exprIsClassName e
-            in if eIsClassName
+            in if eIsClassName -- MyClass.func()
                then case getClassMethodSignature ca eClassName f of
                         Just (c, acc, isStatic, retTp, tpList) ->
                             if isStatic && (acc == TPublic || curClass == c ||
@@ -391,7 +405,7 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                             else error $ "cannot call " ++ eClassName ++ "$" ++ f ++
                                          " inside " ++ cf
                         Nothing -> error $ "cannot call " ++ eClassName ++ "$" ++ f
-               else 
+               else callObjFunc ca e f args -- e.func() [might be super.func()]
     where
         exprIsClassName :: TExpr -> (Bool, String)
         exprIsClassName (TExprVar s) =
@@ -411,25 +425,90 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
         curClass = if insideClassBody
                    then take ((length cf) - 1 - (length curFName)) cf
                    else ""
+        -- FIXME:
+        -- callObjFunc: prepareArguments, __calFuncPos then pop to rax__, popArguments,
+        --              alignStack, __call rax__, unalignStack&push rax&setSU
+        -- callFunc: prepareArguments, popArguments,
+        --           alignStack, __call f__, unalignStack&push rax&setSU
+        -- void func: push a dumb var onto stack?
+        
+        -- prepareArguments: calculate arguments, do args type checking, push them onto stack
+        prepareArguments :: CArg -> [TExpr] -> [TType] -> CArg
+        prepareArguments ca args tpList =
+            if length args /= length tpList
+            then error $ "wrong number of args"
+            else let args' = (drop 6 args) ++ (reverse $ take 6 args)
+                     tpList' = (drop 6 tpList) ++ (reverse $ take 6 tpList)
+                     ca'@(cdo', dataSec', textSec', jt', su', mn') = foldl cExpr ca args'
+                     wrongTp = find (\((_, sutp), argTp) -> not $ canCoerceInto cdo' sutp argTp)
+                                    (zip (reverse su') tpList')
+                 in case wrongTp of
+                        Just ((_, sutp), argTp) ->
+                            error $ "cannot coerce " ++ (show sutp) ++ " into " ++ (show argTp)
+                        Nothing -> ca'
+        -- popArguments: pop calculated arguments (which are on stack) into registers.
+        --               stack usage will be also modified.
+        popArguments :: CArg -> Int -> CArg
+        popArguments ca@(cdo, dataSec, textSec, jt, su, mn) argN =
+            let (popArgs, _) =
+                    foldl (\(acc, rt) _ -> (acc ++ ["pop " ++ ((head rt) !! 0)], drop 1 rt))
+                          ([], drop 1 regTable)
+                          (take argN $ repeat 0xDEADBEEF)
+            in (cdo, dataSec, textSec ++ popArgs, jt, reverse $ drop argN $ reverse su, mn)
+        alignStack :: CArg -> (Int, CArg)
+        alignStack ca@(cdo, dataSec, textSec, jt, su, mn) =
+            if paddingSize == 0
+            then (paddingSize, ca)
+            else (paddingSize,
+                  (cdo, dataSec,
+                   textSec ++ ["sub $" ++ (show paddingSize) ++ ", %rsp"],
+                   jt, su, mn)) -- take care: su doesn't contain the padding variable
+            where
+                paddingSize = ((length su) * 8) `mod` 16
+        unalignStack :: CArg -> Int -> CArg
+        unalignStack ca@(cdo, dataSec, textSec, jt, su, mn) paddingSize =
+            if paddingSize == 0
+            then ca
+            else (cdo, dataSec, textSec ++ ["add $" ++ (show paddingSize) ++ ", %rsp"],
+                  jt, su, mn)
+        callObjFunc :: CArg -> TExpr -> String -> [TExpr] -> CArg
+        callObjFunc ca objExpr f args =
+            if objExpr == (TExprVar "super") && ((not insideClassBody) || curClass == "Object")
+            then error "cannot access super"
+            else let ca'@(cdo, d, t, jt, su, mn) = cExpr ca objExpr
+                     (_, TClass objClass) = last su
+                     su' = (init su) ++ [("$dlc_obj", TClass objClass)]
+                     Just (cName, acc, False, retTp, tpList) =
+                        getClassMethodSignature ca' objClass f
+                     ca'' = prepareArguments (cdo, d, t, jt, su', mn)
+                                             ((TExprVar "$dlc_obj"):args)
+                                             tpList
+                     cTableS = ["movq (%rsp), %rax"] ++
+                               (if objExpr == TExprVar "super"
+                                then ["movq (%rax), %rax"]
+                                else []) ++
+                               ["add $" ++ (show $ cdoGetAttrOffset cdo objClass f) ++ ", %rax"]
+                     (padding, ca''') =
+                        alignStack $ popArguments (caAppendText cTableS ca'')
+                                                  (length tpList)
+
+                     -- +8: for the extra $dlc_obj
+                     ca'''' = unalignStack (caAppendText ["callq %rax"] ca''') (padding + 8)
+                 in -- FIXME: allow accessing protected/private non-static attribute methods
+                    --        from anywhere for now...
+                    -- if objClass /= cName && acc == TPrivate
+                    -- then error $ "cannot call private method " ++ f
+                    -- else
+                    case ca'''' of
+                        (cdo', d', t', jt', su', mn') ->
+                            (cdo', d', t' ++ ["push %rax"],
+                             jt', (init su') ++ [("", retTp)], mn')
+
+
         callFunc :: CArg -> String -> [TExpr] -> [TType] -> TType -> CArg
         callFunc ca f args argTpList retTp =
-            if (length args /= argTpList)
-            then error $ "wrong number of args on calling " ++ f
-            else let args' = (drop 6 args) ++ (reverse (take 6 args))
-                     argTpList' = (drop 6 argTpList) ++ (reverse (take 6 argTpList))
-                     ca'@(cdo', dataSec', textSec', jt', su', mn') = foldl cExpr ca args'
-                     wrongTp = find (\((_, tp), aTp) -> (not $ canCoerceInto cdo' tp aTp))
-                               (zip (reverse su') argTpList')
-                 in case wrongTp of
-                        (Just ((_, tp), aTp)) ->
-                            error $ "cannot coerce " ++ (show tp) ++ " into " ++ (aTp)
-                        Nothing ->
-                            let (popArgs, _) =
-                                    foldl (\(acc, rt) _ ->
-                                            (acc ++ ["pop " ++ ((head rt) !! 0)],
-                                             drop 1 rt))
-                                          ([], (drop 1 regTable))
-                                          (reverse $ take 6 argTpList')
-                                textSec'' = textSec' ++ popArgs -- FIXME: call func && rax && alignment && clean up
-                                su'' = reverse $ drop (length $ take 6 argTpList') (reverse su')
-                            in (cdo', dataSec', textSec'', jt', su'', mn')
+            let ca' = prepareArguments ca args argTpList
+                (padding, ca'') = alignStack $ popArguments ca' $ length args
+                ca'''@(cdo, d, t, jt, su, mn) =
+                    unalignStack (caAppendText ["call " ++ f] ca'') padding
+            in (cdo, d, t ++ ["push %rax"], jt, su ++ [("", retTp)], mn)
