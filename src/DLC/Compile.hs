@@ -89,7 +89,7 @@ compileMethod cdo cName (asData, asText) mName =
             case mDef of
                 (_, mt, mArgs, mBody) ->
                     (mt, if cName /= Nothing && not isStatic
-                         then (mName, TClass cName'):mArgs
+                         then ("this", TClass cName'):mArgs
                          else mArgs,
                      mBody)
         -- now we have:
@@ -113,6 +113,8 @@ compileMethod cdo cName (asData, asText) mName =
                      (concat $ map (\(offset, _) ->
                                         ["mov " ++ (show offset) ++ "(%rbp), %rax",
                                          "push %rax"])
+                                   -- last arg: 16
+                                   -- first arg: ???
                                    $ reverse (zip [16, 24..] $ reverse $ drop 6 stackUsage))
         asDataInc :: [String]
         asMethodBody :: [String]
@@ -141,6 +143,9 @@ getIntTypeRank TByte = 1
 
 -- for assignment / function call
 canCoerceInto :: CDO -> TType -> TType -> Bool
+canCoerceInto _ TVoid TVoid = True
+canCoerceInto _ TVoid _     = False
+canCoerceInto _ _     TVoid = False
 canCoerceInto _ TUnknown _ = True
 canCoerceInto cdo (TClass cFrom) (TClass cTo) =
     if cFrom == cTo
@@ -307,5 +312,124 @@ cStmt ca@(cdo, _, _, _, su, fName) (TStmtReturn e) =
        then caAppendText cleanUp ca' -- stack usage is incurrect; but it will be thrown away
        else error $ "return value type for " ++ fName ++ " is incorrect"
 
+
+-- -- for non-static class methods only.
+-- -- static class methods don't use "this".
+-- getCurrentClassName :: CArg -> Maybe String
+-- getCurrentClassName (_, _, _, _, su, _) =
+--     case filter (\(v, t) -> v == "this") of
+--         [] -> Nothing
+--         ((_, (TClass s)):_) -> Just s
+hasThisInStack :: CArg -> Bool
+hasThisInStack (_, _, _, _, su, _) = any (\(v, _) -> v == "this") su
+
+-- for regular/C-bridge methods only
+getMethodSignature :: CArg -> String -> Maybe (TType, [TType])
+getMethodSignature ((_, _, mDefMap, cmDefMap), _, _, _, _, _) mName =
+    case Data.Map.lookup mName mDefMap of
+        Just (_, retTp, argList, _) -> Just (retTp, map (\(_, t) -> t) argList)
+        Nothing -> case Data.Map.lookup mName cmDefMap of
+                    Just (_, r) -> Just r
+                    Nothing -> Nothing
+-- for class methods only (no matter static or not);
+-- includes "this" for non-static methods.
+getClassMethodSignature :: CArg -> String -> String ->
+                           Maybe (String, TClassAccessModifier, Bool, TType, [TType])
+getClassMethodSignature ca@(_, cDefMap, _, _) cName mName =
+    case Data.Map.lookup cName cDefMap of
+        Nothing -> Nothing
+        Just (_, supClass, _, mDefList) ->
+            case find (\(_, _, (f, _, _, _)) -> f == mName) mDefList of
+                Just (acc, isStatic, (_, retTp, argList, _)) ->
+                    Just (cName, acc, isStatic, retTp,
+                          (if isStatic then [] else [TClass cName]) ++ map (\(_, t) -> t) argList)
+                Nothing -> if cName == "Object"
+                           then Nothing
+                           else getClassMethodSignature ca supClass mName
+
+isSuperClassOf :: CArg -> String -> String -> Bool
+isSuperClassOf -- FIXME
+
 cExpr :: CArg -> TExpr -> CArg
-cExpr a _ = a -- FIXME: just for making the code compile...
+
+-- (this.)hello()
+-- (MyClass.)hello()
+-- or just hello()
+--
+-- o.hello()
+-- this.hello()
+-- super.hello()
+-- MyClass.hello()
+-- 
+-- non-static class methods:
+--      fName => "MyClass$func", has "this" in su
+-- static class methods:
+--      fName => "MyClass$func", no "this" in su
+-- regular methods:
+--      fName => "func", no "this" in su
+cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
+    case maybeE of
+        Nothing ->
+            if not insideClassBody
+            then callRegF
+            else case getClassMethodSignature ca curClass f of
+                    Nothing -> callRegF
+                    Just (c, acc, isStatic, retTp, tpList) ->
+                        if isStatic && (c == curClass || acc == TPublic || acc == TProtected)
+                        then callFunc ca (c ++ "$" ++ f) args tpList retTp
+                        else error $ "cannot call " ++ c ++ "$" ++ f ++ " inside " ++ cf
+        Just e ->
+            let (eIsClassName, eClassName) = exprIsClassName e
+            in if eIsClassName
+               then case getClassMethodSignature ca eClassName f of
+                        Just (c, acc, isStatic, retTp, tpList) ->
+                            if isStatic && (acc == TPublic || curClass == c ||
+                                            (curClass /= "" &&
+                                             acc == TProtected &&
+                                             isSuperClassOf ca c curClass))
+                            then callFunc ca (eClassName ++ "$" ++ f) args tpList retTp
+                            else error $ "cannot call " ++ eClassName ++ "$" ++ f ++
+                                         " inside " ++ cf
+                        Nothing -> error $ "cannot call " ++ eClassName ++ "$" ++ f
+               else 
+    where
+        exprIsClassName :: TExpr -> (Bool, String)
+        exprIsClassName (TExprVar s) =
+            let matches = ((s =~ "^_*[A-Z][A-Za-z0-9_]*$") :: Bool)
+            in if matches
+               then (True, s)
+               else (False, "")
+        exprIsClassName _ = (False, "")
+
+        callRegF :: CArg
+        callRegF = case getMethodSignature ca f of
+                            Nothing -> error $ "cannot find function " ++ f
+                            Just (retTp, argTpList) -> callFunc ca f args argTpList retTp
+
+        insideClassBody = any ('$' ==) cf
+        curFName = reverse $ takeWhile ('$' /=) $ reverse cf
+        curClass = if insideClassBody
+                   then take ((length cf) - 1 - (length curFName)) cf
+                   else ""
+        callFunc :: CArg -> String -> [TExpr] -> [TType] -> TType -> CArg
+        callFunc ca f args argTpList retTp =
+            if (length args /= argTpList)
+            then error $ "wrong number of args on calling " ++ f
+            else let args' = (drop 6 args) ++ (reverse (take 6 args))
+                     argTpList' = (drop 6 argTpList) ++ (reverse (take 6 argTpList))
+                     ca'@(cdo', dataSec', textSec', jt', su', mn') = foldl cExpr ca args'
+                     wrongTp = find (\((_, tp), aTp) -> (not $ canCoerceInto cdo' tp aTp))
+                               (zip (reverse su') argTpList')
+                 in case wrongTp of
+                        (Just ((_, tp), aTp)) ->
+                            error $ "cannot coerce " ++ (show tp) ++ " into " ++ (aTp)
+                        Nothing ->
+                            let (popArgs, _) =
+                                    foldl (\(acc, rt) _ ->
+                                            (acc ++ ["pop " ++ ((head rt) !! 0)],
+                                             drop 1 rt))
+                                          ([], (drop 1 regTable))
+                                          (reverse $ take 6 argTpList')
+                                textSec'' = textSec' ++ popArgs -- FIXME: call func && rax && alignment && clean up
+                                su'' = reverse $ drop (length $ take 6 argTpList') (reverse su')
+                            in (cdo', dataSec', textSec'', jt', su'', mn')
