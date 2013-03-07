@@ -512,3 +512,123 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                 ca'''@(cdo, d, t, jt, su, mn) =
                     unalignStack (caAppendText ["call " ++ f] ca'') padding
             in (cdo, d, t ++ ["push %rax"], jt, su ++ [("", retTp)], mn)
+
+cExpr ca (TExprAdd e1 e2) =
+    let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, e1tp), (_, e2tp)] = drop (length su - 2) su
+        tp = coerce e1tp e2tp --     e2           e1        e1 += e2
+        textSec' = textSec ++ ["pop %rsi", "pop %rdi", "add %rsi, %rdi", "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", tp)]
+    in (cdo, dataSec, textSec', jt, su', mn)
+cExpr ca (TExprMin e1 e2) =
+    let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, e1tp), (_, e2tp)] = drop (length su - 2) su
+        tp = coerce e1tp e2tp --     e2           e1        e1 -= e2
+        textSec' = textSec ++ ["pop %rsi", "pop %rdi", "sub %rsi, %rdi", "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", tp)]
+    in (cdo, dataSec, textSec', jt, su', mn)
+cExpr ca (TExprMul e1 e2) =
+    let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, e1tp), (_, e2tp)] = drop (length su - 2) su
+        tp = coerce e1tp e2tp --     e2           e1        e1 *= e2
+        textSec' = textSec ++ ["pop %rsi", "pop %rdi", "add %rsi, %rdi", "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", tp)]
+    in (cdo, dataSec, textSec', jt, su', mn)
+cExpr ca (TExprDiv e1 e2) =
+    let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, e1tp), (_, e2tp)] = drop (length su - 2) su
+        tp = coerce e1tp e2tp --     e2           e1        e1 /= e2
+        textSec' = textSec ++ ["pop %rsi", "pop %rdi", "add %rsi, %rdi", "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", tp)]
+    in (cdo, dataSec, textSec', jt, su', mn)
+cExpr ca (TExprNeg e) =
+    let (cdo, dataSec, textSec, jt, su, mn) = cExpr ca e
+        (_, tp) = last su --          e          rdi = 0        rdi -= e
+        textSec' = textSec ++ ["pop %rsi", "mov $0, %rdi", "sub %rsi, %rdi", "push %rdi"]
+        su' = (init su) ++ [("", tp)]
+    in if isIntType tp
+       then (cdo, dataSec, textSec', jt, su', mn)
+       else error "cannot apply neg to non-int types"
+cExpr ca (TExprAnd e1 e2) =
+    let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, e1tp), (_, e2tp)] = drop (length su - 2) su
+        textSec' = textSec ++ ["pop %rsi", "pop %rdi", "and %rsi, %rdi", "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", TBool)]
+    in if e1tp == TBool && e2tp == TBool
+       then (cdo, dataSec, textSec', jt, su', mn)
+       else error "cannot apply and to non-bool types"
+cExpr ca (TExprOr e1 e2) =
+    let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, e1tp), (_, e2tp)] = drop (length su - 2) su
+        textSec' = textSec ++ ["pop %rsi", "pop %rdi", "or %rsi, %rdi", "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", TBool)]
+    in if e1tp == TBool && e2tp == TBool
+       then (cdo, dataSec, textSec', jt, su', mn)
+       else error "cannot apply or to non-bool types"
+cExpr ca (TExprNot e) =
+    let (cdo, dataSec, textSec, jt, su, mn) = cExpr ca e
+        (_, tp) = last su
+        textSec' = textSec ++ ["pop %rdi", "xor $1, %rdi", "push %rdi"]
+        su' = (init su) ++ [("", TBool)]
+    in if tp /= TBool
+       then error "cannot apply not to non-bool types"
+       else (cdo, dataSec, textSec', jt, su', mn)
+
+-- ++, --, +=, -=
+
+cExpr ca (TExprIncV e) = cExpr ca (TExprIncBy e $ TExprInt 1) -- ++i
+cExpr ca (TExprDecV e) = cExpr ca (TExprDecBy e $ TExprInt 1) -- --i
+cExpr ca (TExprVInc e) = -- i++
+    let (cdo, dataSec, textSec, jt, su, mn) = cExpr ca (TExprIncBy e $ TExprInt 1)
+    in (cdo, dataSec, textSec ++ ["pop %rdi", "sub $1, %rdi", "push %rdi"], jt, su, mn)
+cExpr ca (TExprVDec e) = -- i--
+    let (cdo, dataSec, textSec, jt, su, mn) = cExpr ca (TExprDecBy e $ TExprInt 1)
+    in (cdo, dataSec, textSec ++ ["pop %rdi", "add $1, %rdi", "push %rdi"], jt, su, mn)
+        
+-- a[s] += e   =>   a.__dl_set(s, e+a[s])
+cExpr ca (TExprIncBy (TExprArrAccess eArr eSub) e) =
+    let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [eArr, eSub, e]
+        [(_, t1), (_, t2), (_, t3)] = drop (length su - 3) su
+        su' = (take (length su - 3) su) ++
+              [("$dlc_eArr", t1), ("$dlc_eSub", t2), ("$dlc_e", t3)]
+        ca''@(cdo'', d'', t'', jt'', su'', mn'') =
+                cExpr (cdo, dataSec, textSec, jt, su', mn)
+                      (TExprFunCall (Just $ TExprVar "$dlc_eArr")
+                                    "__dl_set"
+                                    [TExprVar "$dlc_eSub",
+                                     (TExprAdd (TExprArrAccess (TExprVar "$dlc_eArr")
+                                                               (TExprVar "$dlc_eSub"))
+                                               (TExprVar "$dlc_e"))])
+        tS = ["mov " ++ getStackVar (length su + 2) ++ ", %rax",
+              "add $32, %rsp",
+              "push %rax"]
+        su''' = su ++ [("", coerce t2 t3)]
+    in (cdo'', d'', t'' ++ tS, jt'', su''', mn'')
+
+cExpr ca (TExprDecBy (TExprArrAccess eArr eSub) e) =
+    let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [eArr, eSub, e]
+        [(_, t1), (_, t2), (_, t3)] = drop (length su - 3) su
+        su' = (take (length su - 3) su) ++
+              [("$dlc_eArr", t1), ("$dlc_eSub", t2), ("$dlc_e", t3)]
+        ca''@(cdo'', d'', t'', jt'', su'', mn'') =
+                cExpr (cdo, dataSec, textSec, jt, su', mn)
+                      (TExprFunCall (Just $ TExprVar "$dlc_eArr")
+                                    "__dl_set"
+                                    [TExprVar "$dlc_eSub",
+                                     (TExprMin (TExprArrAccess (TExprVar "$dlc_eArr")
+                                                               (TExprVar "$dlc_eSub"))
+                                               (TExprVar "$dlc_e"))])
+        tS = ["mov " ++ getStackVar (length su + 2) ++ ", %rax",
+              "add $32, %rsp",
+              "push %rax"]
+        su''' = su ++ [("", coerce t2 t3)]
+    in (cdo'', d'', t'' ++ tS, jt'', su''', mn'')
+
+-- cExpr ca (TExprIncBy e1 e2) =
+--     let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
+--         [(_, e1tp), (_, e2tp)] = take (length su - 2) su
+--         tp = coerce e1tp e2tp
+--         textSec' = textSec ++ ["pop"]
+
+cExprAddr :: CArg -> TExpr -> CArg
+cExprAddr ca _ = ca -- FIXME
