@@ -527,6 +527,7 @@ cExpr ca (TExprMin e1 e2) =
         textSec' = textSec ++ ["pop %rsi", "pop %rdi", "sub %rsi, %rdi", "push %rdi"]
         su' = (take (length su - 2) su) ++ [("", tp)]
     in (cdo, dataSec, textSec', jt, su', mn)
+-- FIXME: use imul/idiv ?
 cExpr ca (TExprMul e1 e2) =
     let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
         [(_, e1tp), (_, e2tp)] = drop (length su - 2) su
@@ -541,6 +542,7 @@ cExpr ca (TExprDiv e1 e2) =
         textSec' = textSec ++ ["pop %rsi", "pop %rdi", "add %rsi, %rdi", "push %rdi"]
         su' = (take (length su - 2) su) ++ [("", tp)]
     in (cdo, dataSec, textSec', jt, su', mn)
+
 cExpr ca (TExprNeg e) =
     let (cdo, dataSec, textSec, jt, su, mn) = cExpr ca e
         (_, tp) = last su --          e          rdi = 0        rdi -= e
@@ -630,5 +632,164 @@ cExpr ca (TExprDecBy (TExprArrAccess eArr eSub) e) =
 --         tp = coerce e1tp e2tp
 --         textSec' = textSec ++ ["pop"]
 
+-- a += n or a.b += n
+--
+-- rax = ptr
+-- rdi = ptr
+-- rdi = *rdi
+-- rsi = n
+-- rdi += rsi
+-- *rax = rdi
+-- pop ptr, n
+-- push rax
+cExpr ca (TExprIncBy e1 e2) =
+    let (cdo, dS, tS, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, t1), (_, t2)] = drop (length su - 2) su
+        tS' = tS ++ ["pop %rsi", "pop %rax", "mov %rax, %rdi", "mov (%rdi), %rdi",
+                     "add %rsi, %rdi", "mov %rdi, (%rax)", "add $16, %rsp", "push %rax"]
+        tp = coerce t1 t2
+        su' = (take (length su - 2) su) ++ [("", tp)]
+    in (cdo, dS, tS', jt, su', mn)
+cExpr ca (TExprDecBy e1 e2) =
+    let (cdo, dS, tS, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, t1), (_, t2)] = drop (length su - 2) su
+        tS' = tS ++ ["pop %rsi", "pop %rax", "mov %rax, %rdi", "mov (%rdi), %rdi",
+                     "sub %rsi, %rdi", "mov %rdi, (%rax)", "add $16, %rsp", "push %rax"]
+        tp = coerce t1 t2
+        su' = (take (length su - 2) su) ++ [("", tp)]
+    in (cdo, dS, tS', jt, su', mn)
+
+-- bool a == bool b  =>  a ^ b ^ 1
+-- else:             =>  not (TBool)(a-b)
+cExpr ca (TExprEq e1 e2) =
+    let (cdo, dS, tS, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, t1), (_, t2)] = drop (length su - 2) su
+        tS' = tS ++ ["pop %rdi", "pop %rsi", "xor %rsi, %rdi", "xor $1, %rdi", "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", TBool)]
+    in if t1 == TBool && t2 == TBool
+       then (cdo, dS, tS', jt, su', mn)
+       else cExpr ca (TExprNot $ TExprConvType TBool $ TExprMin e1 e2)
+
+-- bool a != bool b  =>  a ^ b
+-- else:             =>  (TBool)(a-b)
+cExpr ca (TExprNeq e1 e2) =
+    let (cdo, dS, tS, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, t1), (_, t2)] = drop (length su - 2) su
+        tS' = tS ++ ["pop %rdi", "pop %rsi", "xor %rsi, %rdi", "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", TBool)]
+    in if t1 == TBool && t2 == TBool
+       then (cdo, dS, tS', jt, su', mn)
+       else cExpr ca $ TExprConvType TBool $ TExprMin e1 e2
+
+cExpr ca (TExprLeq e1 e2) =
+    let (cdo, dS, tS, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, t1), (_, t2)] = drop (length su - 2) su
+        tag1 = getJTag mn jt
+        tag2 = getJTag mn (jt+1)
+        jt' = jt + 2
+        tS' = tS ++ ["%pop %rsi", "pop %rdi",
+                     "cmp %rdi, %rsi", -- cmp e1, e2
+                     "jle " ++ tag1,   -- jle T1
+                     "mov $0, %rdi",   --     mov $0, %rdi
+                     "jmp " ++ tag2,   --     jmp T2
+                     tag1 ++ ":",      -- T1:
+                     "mov $1, %rdi",   --     mov $1, %rdi
+                     tag2 ++ ":",      -- T2:
+                     "push %rdi"]      -- push %rdi
+        su' = (take (length su - 2) su) ++ [("", TBool)]
+    in if (isIntType t1) && (isIntType t2)
+       then (cdo, dS, tS', jt', su', mn)
+       else error "cannot compare non-int types"
+cExpr ca (TExprGeq e1 e2) =
+    let (cdo, dS, tS, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, t1), (_, t2)] = drop (length su - 2) su
+        tag1 = getJTag mn jt
+        tag2 = getJTag mn (jt+1)
+        jt' = jt + 2
+        tS' = tS ++ ["%pop %rsi", "pop %rdi",
+                     "cmp %rdi, %rsi",
+                     "jge " ++ tag1,
+                     "mov $0, %rdi",
+                     "jmp " ++ tag2,
+                     tag1 ++ ":",
+                     "mov $1, %rdi",
+                     tag2 ++ ":",
+                     "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", TBool)]
+    in if (isIntType t1) && (isIntType t2)
+       then (cdo, dS, tS', jt', su', mn)
+       else error "cannot compare non-int types"
+cExpr ca (TExprLe e1 e2) =
+    let (cdo, dS, tS, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, t1), (_, t2)] = drop (length su - 2) su
+        tag1 = getJTag mn jt
+        tag2 = getJTag mn (jt+1)
+        jt' = jt + 2
+        tS' = tS ++ ["%pop %rsi", "pop %rdi",
+                     "cmp %rdi, %rsi",
+                     "jl " ++ tag1,
+                     "mov $0, %rdi",
+                     "jmp " ++ tag2,
+                     tag1 ++ ":",
+                     "mov $1, %rdi",
+                     tag2 ++ ":",
+                     "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", TBool)]
+    in if (isIntType t1) && (isIntType t2)
+       then (cdo, dS, tS', jt', su', mn)
+       else error "cannot compare non-int types"
+cExpr ca (TExprGe e1 e2) =
+    let (cdo, dS, tS, jt, su, mn) = foldl cExpr ca [e1, e2]
+        [(_, t1), (_, t2)] = drop (length su - 2) su
+        tag1 = getJTag mn jt
+        tag2 = getJTag mn (jt+1)
+        jt' = jt + 2
+        tS' = tS ++ ["%pop %rsi", "pop %rdi",
+                     "cmp %rdi, %rsi",
+                     "jg " ++ tag1,
+                     "mov $0, %rdi",
+                     "jmp " ++ tag2,
+                     tag1 ++ ":",
+                     "mov $1, %rdi",
+                     tag2 ++ ":",
+                     "push %rdi"]
+        su' = (take (length su - 2) su) ++ [("", TBool)]
+    in if (isIntType t1) && (isIntType t2)
+       then (cdo, dS, tS', jt', su', mn)
+       else error "cannot compare non-int types"
+
+-- int[][] a;
+-- a[s] => (int[]) a.__dl_get(s)
+cExpr ca (TExprArrAccess eArr eSub) =
+    let (_, _, _, _, su, _) = cExpr ca eArr
+        (_, TArray dep tp) = last su
+        tp' = if dep == 1
+              then tp
+              else TArray (dep-1) tp
+    in cExpr ca $ TExprConvType tp' $ TExprFunCall (Just eArr) "__dl_get" [eSub]
+
+cExpr ca (TExprDotAccess e v) =
+    let (cdo@(oi, cDefMap, _, _), dS, tS, jt, su, mn) = cExpr ca e
+        (_, TClass cName) = last su
+        (_, _, tp) = case cDefMap ! cName of -- FIXME: acc and isStatic ignored
+                        (_, _, attrList, _) ->
+                            case find (\(_, _, (vn, _, _)) -> vn == v) attrList of
+                                Just (acc, isStatic, (_, tp, _)) -> (acc, isStatic, tp)
+        offset = case oi ! cName of (_, _, m) -> m ! v
+        tS' = tS ++ ["pop %rdi", "mov " ++ (show offset) ++ "(%rdi), %rdi", "push %rdi"]
+        su' = (init su) ++ [("", tp)]
+    in (cdo, dS, tS', jt, su', mn)
+
+cExpr (cdo, dS, tS, jt, su, mn) (TExprBool b) =
+    (cdo, dS, tS ++ ["push $" ++ if b then "1" else "0"], jt, su ++ [("", TBool)], mn)
+cExpr (cdo, dS, tS, jt, su, mn) (TExprVar v) =
+    let Just (idx, (_, tp)) = find (\(i, (vn, tp)) -> vn == v) $ zip [0..] su
+        tS' = tS ++ ["mov " ++ getStackVar idx ++ ", %rdi", "push %rdi"]
+    in (cdo, dS, tS', jt, su ++ [("", tp)], mn)
+cExpr (cdo, dS, tS, jt, su, mn) (TExprInt n) =
+    (cdo, dS, tS ++ ["push $" ++ (show n)], jt, su ++ [("", TInt)], mn)
+
+-- if the addr points to a int,
+-- type on su should also be int (but NOT int*).
 cExprAddr :: CArg -> TExpr -> CArg
 cExprAddr ca _ = ca -- FIXME

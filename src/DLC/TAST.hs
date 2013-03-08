@@ -54,8 +54,8 @@ data TExpr = TExprFunCall (Maybe TExpr) String [TExpr] -- point[8].dump()
            | TExprNeq TExpr TExpr   -- i != n
            | TExprLeq TExpr TExpr   -- i <= n
            | TExprGeq TExpr TExpr   -- i >= n
-           | TExprLe TExpr TExpr    -- i < n
-           | TExprGe TExpr TExpr    -- i > n
+           | TExprLe TExpr TExpr    -- i < n     -- FIXME: not le... should be l or less...
+           | TExprGe TExpr TExpr    -- i > n     -- FIXME
            | TExprArrAccess TExpr TExpr     -- a[expr]
            | TExprDotAccess TExpr String    -- expr.hello
            | TExprBool Bool     -- True/False
