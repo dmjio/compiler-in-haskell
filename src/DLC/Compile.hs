@@ -239,8 +239,11 @@ cStmt ca@(cdo, dataSec, textSec, jt, su, mn) (TStmtPrint e) = -- print(15)
                  else case tp_e of
                         TByte -> "_dlib_print_char"
                         TBool -> "_dlib_print_bool"
+        padding = ((length su - 1) `mod` 2) * 8
         callcText = ["pop " ++ (regTable !! 1 !! 0),
-                     "call " ++ ptname] -- no return value, only one arg
+                     "sub $" ++ (show padding) ++ ", %rsp",
+                     "call " ++ ptname, -- no return value, only one arg
+                     "add $" ++ (show padding) ++ ", %rsp"]
     in (cdo, dataSec', textSec' ++ callcText, jt, su, mn) -- not su'
 
 cStmt ca@(cdo, dataSec, textSec, jt, su, fName) (TStmtIf e b1 b2) = -- if (c) {b1} else {b2}
@@ -487,7 +490,8 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                                (if objExpr == TExprVar "super"
                                 then ["movq (%rax), %rax"]
                                 else []) ++
-                               ["add $" ++ (show $ cdoGetAttrOffset cdo objClass f) ++ ", %rax"]
+                               ["add $" ++ (show $ cdoGetAttrOffset cdo objClass f) ++ ", %rax",
+                                "mov (%rax), %rax"] -- get addr of the function
                      (padding, ca''') =
                         alignStack $ popArguments (caAppendText cTableS ca'')
                                                   (length tpList)
@@ -789,7 +793,150 @@ cExpr (cdo, dS, tS, jt, su, mn) (TExprVar v) =
 cExpr (cdo, dS, tS, jt, su, mn) (TExprInt n) =
     (cdo, dS, tS ++ ["push $" ++ (show n)], jt, su ++ [("", TInt)], mn)
 
+cExpr (cdo, dS, tS, jt, su, mn) (TExprStr s) =
+    let strTag = "STAG_" ++ mn ++ "_" ++ (show jt)
+        jt' = jt + 1
+        padding = (length su `mod` 2) * 8
+        dS' = dS ++ [strTag ++ ":", ".ascii " ++ (show s)]
+        tS' = tS ++ ["leaq " ++ strTag ++ "(%rip), " ++ (regTable !! 1 !! 0),
+                     "mov $" ++ (show $ length s) ++ ", " ++ (regTable !! 2 !! 0),
+                     "mov $4, " ++ (regTable !! 3 !! 0),
+                     "sub $" ++ (show padding) ++ ", %rsp",
+                     "call __DL_Array$__dl_copyFromCBytes",
+                     "add $" ++ (show padding) ++ ", %rsp",
+                     "push %rax"]
+        su' = su ++ [("", TArray 1 TByte)]
+    in (cdo, dS', tS', jt', su', mn)
+
+cExpr (cdo, dS, tS, jt, su, mn) (TExprChar c) =
+    (cdo, dS, tS ++ ["push $" ++ (show c)], jt, su ++ [("", TByte)], mn)
+cExpr (cdo, dS, tS, jt, su, mn) TExprNull =
+    (cdo, dS, tS ++ ["push $0"], jt, su ++ [("", TUnknown)], mn)
+
+cExpr ca (TExprConvType tp e) =
+    let ca'@(cdo, dS, tS, jt, su, mn) = cExpr ca e
+        (_, e_tp) = last su
+        _tBoolConvert = tp == TBool && e_tp /= TBool
+        jt' = if _tBoolConvert then jt + 1 else jt
+        tag = getJTag mn jt
+        su' = (init su) ++ [("", tp)]
+        tS' = if _tBoolConvert
+              then tS ++ ["pop %rax",       -- pop %rax
+                          "cmp %rax, $0",   -- cmp %rax, $0
+                          "jz " ++ tag,    -- jz T
+                          tag ++ ":",      -- T:
+                          "mov $1, %rax",   --    mov $1, %rax
+                          "push %rax"]      -- push %rax
+              else tS
+    in (cdo, dS, tS', jt', su', mn)
+
+-- speed up for vars
+-- notice: it is not correct on the types.
+--         read the general implementation when uncomment this.
+--
+-- cExpr ca (TExprAssign (TExprVar v) e) =
+--     let ca'@(cdo, dS, tS, jt, su, mn) = cExpr ca e
+--         Just (idx, (_, vTp)) = find (\(idx, (vn, _)) -> vn == v) $ zip [0..] su
+--         (_, eTp) = last su
+--         tp = if (eTp == TUnknown) || (vTp == TBool && eTp == TBool)
+--              then vTp -- might set bool to non-0-1 value?
+--              else if isIntType eTp && isIntType vTp
+--                   then coerce eTp vTp
+--                   else if canCoerceInto cdo eTp vTp
+--                        then vTp
+--                        else error $ "cannot coerce " ++ (show eTp) ++ " into " ++ (show vTp)
+--         su' = (init su) ++ [("", tp)]
+--         tS' = tS ++ ["mov " ++ (getStackVar (length su - 1)) ++ ", %rax", -- note: not pop
+--                      "mov %rax, " ++ (getStackVar idx)]
+--     in (cdo, dS, tS', jt, su', mn)
+
+-- a[s] = e  ->  a.__dl_set(s, e) && return e
+cExpr ca (TExprAssign (TExprArrAccess eArr eSub) e) =
+    let ca'@(cdo, dS, tS, jt, su, mn) = foldl cExpr ca [eArr, eSub, e]
+        [(_, aTp), (_, sTp), (_, eTp)] = drop (length su - 3) su
+        apTp = case aTp of
+                TArray 1 t -> t
+                TArray n t -> TArray (n-1) t
+        su' = (take (length su - 3) su) ++
+              [("$dlc_arr", aTp), ("$dlc_sub", sTp), ("$dlc_e", eTp)]
+        ca''@(cdo'', dS'', tS'', jt'', su'', mn'') =
+            cExpr (cdo, dS, tS, jt, su', mn)
+                  (TExprFunCall (Just $ TExprVar "$dlc_arr")
+                                "__dl_set"
+                                [TExprVar "$dlc_sub", TExprVar "$dlc_e"])
+        su''' = su ++ [("", apTp)]
+        tS''' = ["add $8, %rsp", "pop %rax", "add $16, %rsp", "push %rax"]
+    in if canCoerceInto cdo eTp apTp
+       then (cdo'', dS'', tS''', jt'', su''', mn'')
+       else error $ "cannot coerce " ++ (show eTp) ++ " into " ++ (show apTp)
+
+cExpr ca (TExprAssign e1 e2) =
+    let ca'@(cdo, dS, tS, jt, su, mn) = cExpr (cExprAddr ca e1) e2
+        [(_, vTp), (_, eTp)] = drop (length su - 2) su
+        tp = if (eTp == TUnknown) || (vTp == TBool && eTp == TBool) ||
+                (isIntType eTp && isIntType vTp) || (canCoerceInto cdo eTp vTp)
+             then vTp
+             else error $ "cannot coerce " ++ (show eTp) ++ " into " ++ (show vTp)
+        su' = (take (length su - 2) su) ++ [("", tp)]
+        tS' = tS ++ ["pop %rdi", "pop %rsi", "mov %rdi, (%rsi)", "push %rdi"]
+    in (cdo, dS, tS', jt, su', mn)
+
+cExpr (cdo@(oi, _, _, _), dS, tS, jt, su, mn) (TExprNewObj cName) =
+    let (oSize, _, _) = oi ! cName
+        padding = ((length su) `mod` 2) * 8
+        s = ["mov $" ++ (show oSize) ++ ", %rdi",
+             "sub $" ++ (show padding) ++ ", %rsp",
+             "call _malloc",
+             "add $" ++ (show padding) ++ ", %rsp",
+             "mov " ++ cName ++ "$$, (%rax)",
+             "push %rax"]
+    in (cdo, dS, tS ++ s, jt, su ++ [("", TClass cName)], mn)
+
+-- new int[35]  =>  RefArray of Array
+-- new C[1]     =>  RefArray of RefArray
+cExpr ca (TExprNewArr tp [e]) =
+    let ca'@(cdo, dS, tS, jt, su, mn) = cExpr ca e
+        bsize = if tp == TBool || tp == TByte
+                then 1
+                else case tp of
+                        TInt -> 8
+                        TInt32 -> 4
+                        TClass _ -> 8
+        arrType = case tp of
+                        TClass _ -> "__DL_RefArray"
+                        _ -> "__DL_Array"
+        padding = (length su `mod` 2) * 8
+        s = ["pop %rdi",                            -- len
+             "sub $" ++ (show padding) ++ ", %rsp",
+             "mov $" ++ (show $ bsize) ++ ", %rsi", -- bsize
+             "call __DL_Array$dl_create",
+             "add $" ++ (show padding) ++ ", %rsp"] ++
+            (case tp of
+                 TClass _ -> ["movq __DL_RefArray$$, (%rax)"]
+                 _ -> []) ++
+            ["push %rax"]
+        su' = (init su) ++ [("", TArray 1 tp)]
+    in (cdo, dS, tS ++ s, jt, su', mn)
+
+-- cExpr ca (TExprNewArr tp (e:es)) = -- FIXME: implement it!
+
 -- if the addr points to a int,
 -- type on su should also be int (but NOT int*).
 cExprAddr :: CArg -> TExpr -> CArg
-cExprAddr ca _ = ca -- FIXME
+cExprAddr ca@(cdo, dS, tS, jt, su, mn) (TExprVar v) =
+    let Just (idx, (_, tp)) = find (\(_, (vn, _)) -> vn == v) $ zip [0..] su
+        tS' = tS ++ ["mov %rbp, %rdi", "add $" ++ (show $ (idx+1)*8) ++ ", %rdi", "push %rdi"]
+    in (cdo, dS, tS', jt, su ++ [("", tp)], mn)
+
+cExprAddr ca (TExprDotAccess e v) =
+    let (cdo@(oi, cDefMap, _, _), dS, tS, jt, su, mn) = cExpr ca e
+        (_, TClass cName) = last su
+        Just (_, _, (_, vTp, _)) = -- FIXME: acc and isStatic are ignored
+            case cDefMap ! cName of
+                (_, _, attrList, _) ->
+                    find (\(acc, isStatic, (vn, tp, _)) -> vn == v) attrList
+        vOffset = case oi ! cName of
+                    (_, _, m) -> m ! v
+        tS' = tS ++ ["pop %rax", "add $" ++ (show vOffset) ++ ", %rax", "push %rax"]
+        su' = init su ++ [("", vTp)]
+    in (cdo, dS, tS', jt, su', mn)
