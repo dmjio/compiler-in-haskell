@@ -30,14 +30,21 @@ compileTo h cdo =
         writeTextSection h asText
 
 writeDataSection :: Handle -> [String] -> IO ()
-writeDataSection h d = do {hPutStrLn h ".data"; mapM_ (hPutStrLn h) d}
+writeDataSection h d = do
+    hPutStrLn h ".data"
+    mapM_ (\x -> if (x =~ "^.*:$") :: Bool
+                 then do {hPutStrLn h ""; hPutStrLn h x}
+                 else hPutStrLn h $ "    " ++ x)
+          d
+                    
 
 writeTextSection :: Handle -> [String] -> IO ()
 writeTextSection h d = do
     hPutStrLn h ".text"
     mapM_ (\x -> if (x =~ "^.*:$") :: Bool
-                 then hPutStrLn h x
-                 else hPutStrLn h $ "    " ++ x) d
+                 then do {hPutStrLn h ""; hPutStrLn h x}
+                 else hPutStrLn h $ "    " ++ x)
+          d
 
 compileClass :: CDO -> ([String], [String]) -> String -> ([String], [String])
 compileClass cdo (asData, asText) cName =
@@ -52,8 +59,8 @@ compileClass cdo (asData, asText) cName =
                                         Just x -> (x ++ "$" ++ cm))
                            methodTable
         sup = if cName == "Object" then "$0" else superName ++ "$$"
-        asData' = asData ++ [cName ++ "$$:", "    .quad " ++ sup] ++
-                  map ("    .quad " ++) methodTable'
+        asData' = asData ++ [cName ++ "$$:", ".quad " ++ sup] ++
+                  map (".quad " ++) methodTable'
         resolveClassName :: String -> Maybe String
         resolveClassName cmName = r cName
             where r :: String -> Maybe String
@@ -116,6 +123,7 @@ compileMethod cdo cName (asData, asText) mName =
                                          "push %rax"])
                                    -- last arg: 16
                                    -- first arg: ???
+                                   -- stack: arg7, arg8, (ret)
                                    $ reverse (zip [16, 24..] $ reverse $ drop 6 stackUsage))
         asDataInc :: [String]
         asMethodBody :: [String]
@@ -227,7 +235,8 @@ cStmt ca@(cdo, d, t, j, su, mn) (TStmtVarDef (vName, tp, expr)) = -- int i = 1;
                    in if canCoerceInto cdo tp_e tp
                       then (cdo, d', t', --  ++ ["push " ++ (getStackVar $ length su')],
                             j', su ++ [(vName, tp)], mn) -- yes, su, but not su'
-                      else error $ "cannot coerce " ++ (show tp_e) ++ " into " ++ (show tp)
+                      else error $ "vardef: cannot coerce " ++ (show tp_e) ++
+                                   " into " ++ (show tp)
         -- variables defined inside blocks(for, while...) will be the same as if they are
         -- defined at beginning of the whole method.
         Just x -> error $ "multiple definition of " ++ vName
@@ -428,7 +437,6 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
         curClass = if insideClassBody
                    then take ((length cf) - 1 - (length curFName)) cf
                    else ""
-        -- FIXME:
         -- callObjFunc: prepareArguments, __calFuncPos then pop to rax__, popArguments,
         --              alignStack, __call rax__, unalignStack&push rax&setSU
         -- callFunc: prepareArguments, popArguments,
@@ -442,12 +450,15 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
             then error $ "wrong number of args"
             else let args' = (drop 6 args) ++ (reverse $ take 6 args)
                      tpList' = (drop 6 tpList) ++ (reverse $ take 6 tpList)
+                     -- orig: 1 2 3 4 5 6 7 8
+                     -- now: 7 8 6 5 4 3 2 1
                      ca'@(cdo', dataSec', textSec', jt', su', mn') = foldl cExpr ca args'
                      wrongTp = find (\((_, sutp), argTp) -> not $ canCoerceInto cdo' sutp argTp)
-                                    (zip (reverse su') tpList')
+                                    (zip (reverse su') (reverse tpList'))
                  in case wrongTp of
-                        Just ((_, sutp), argTp) ->
-                            error $ "cannot coerce " ++ (show sutp) ++ " into " ++ (show argTp)
+                        Just ((vName, sutp), argTp) ->
+                            error $ "prepareArguments: cannot coerce " ++ (show sutp) ++
+                                    " <" ++ vName ++ "> into " ++ (show argTp)
                         Nothing -> ca'
         -- popArguments: pop calculated arguments (which are on stack) into registers.
         --               stack usage will be also modified.
@@ -478,7 +489,10 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
         callObjFunc ca objExpr f args =
             if objExpr == (TExprVar "super") && ((not insideClassBody) || curClass == "Object")
             then error "cannot access super"
-            else let ca'@(cdo, d, t, jt, su, mn) = cExpr ca objExpr
+            else let ca'@(cdo, d, t, jt, su, mn) =
+                            cExpr ca (case objExpr of
+                                        TExprVar "super" -> TExprVar "this"
+                                        _ -> objExpr)
                      (_, TClass objClass) = last su
                      su' = (init su) ++ [("$dlc_obj", TClass objClass)]
                      Just (cName, acc, False, retTp, tpList) =
@@ -490,7 +504,7 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                                (if objExpr == TExprVar "super"
                                 then ["movq (%rax), %rax"]
                                 else []) ++
-                               ["add $" ++ (show $ cdoGetAttrOffset cdo objClass f) ++ ", %rax",
+                               ["add $" ++ (show $ cdoGetFuncOffset cdo objClass f) ++ ", %rax",
                                 "mov (%rax), %rax"] -- get addr of the function
                      (padding, ca''') =
                         alignStack $ popArguments (caAppendText cTableS ca'')
@@ -775,11 +789,22 @@ cExpr ca (TExprArrAccess eArr eSub) =
 cExpr ca (TExprDotAccess e v) =
     let (cdo@(oi, cDefMap, _, _), dS, tS, jt, su, mn) = cExpr ca e
         (_, TClass cName) = last su
-        (_, _, tp) = case cDefMap ! cName of -- FIXME: acc and isStatic ignored
-                        (_, _, attrList, _) ->
-                            case find (\(_, _, (vn, _, _)) -> vn == v) attrList of
-                                Just (acc, isStatic, (_, tp, _)) -> (acc, isStatic, tp)
-        offset = case oi ! cName of (_, _, m) -> m ! v
+        -- FIXME: acc and isStatic ignored
+        Just (_, _, (_, tp, _)) = cdoGetClassAttrDef cdo cName v
+        -- (_, _, tp) = case cDefMap ! cName of
+        --                 (_, _, attrList, _) ->
+        --                     case find (\(_, _, (vn, _, _)) -> vn == v) attrList of
+        --                         Just (acc, isStatic, (_, tp, _)) -> (acc, isStatic, tp)
+        --                         Nothing -> error $ "cExpr dotAccess: cannot find " ++ v
+        getOffset :: CDO -> String -> String -> Maybe Int
+        getOffset cdo@(oi, _, _, _) cName v =
+            case Data.Map.lookup cName oi of
+                Just (_, _, m) -> case Data.Map.lookup v m of
+                                    Just x -> Just x
+                                    Nothing -> if cName == "Object"
+                                                then Nothing
+                                                else getOffset cdo (cdoGetSuperClass cdo cName) v
+        offset = case getOffset cdo cName v of Just x -> x
         tS' = tS ++ ["pop %rdi", "mov " ++ (show offset) ++ "(%rdi), %rdi", "push %rdi"]
         su' = (init su) ++ [("", tp)]
     in (cdo, dS, tS', jt, su', mn)
@@ -787,7 +812,9 @@ cExpr ca (TExprDotAccess e v) =
 cExpr (cdo, dS, tS, jt, su, mn) (TExprBool b) =
     (cdo, dS, tS ++ ["push $" ++ if b then "1" else "0"], jt, su ++ [("", TBool)], mn)
 cExpr (cdo, dS, tS, jt, su, mn) (TExprVar v) =
-    let Just (idx, (_, tp)) = find (\(i, (vn, tp)) -> vn == v) $ zip [0..] su
+    let (idx, (_, tp)) = case find (\(i, (vn, tp)) -> vn == v) $ zip [0..] su of
+                            Just x -> x
+                            Nothing -> error $ "cannot find variable " ++ v
         tS' = tS ++ ["mov " ++ getStackVar idx ++ ", %rdi", "push %rdi"]
     in (cdo, dS, tS', jt, su ++ [("", tp)], mn)
 cExpr (cdo, dS, tS, jt, su, mn) (TExprInt n) =
@@ -868,7 +895,7 @@ cExpr ca (TExprAssign (TExprArrAccess eArr eSub) e) =
         tS''' = ["add $8, %rsp", "pop %rax", "add $16, %rsp", "push %rax"]
     in if canCoerceInto cdo eTp apTp
        then (cdo'', dS'', tS''', jt'', su''', mn'')
-       else error $ "cannot coerce " ++ (show eTp) ++ " into " ++ (show apTp)
+       else error $ "cExpr arr access: cannot coerce " ++ (show eTp) ++ " into " ++ (show apTp)
 
 cExpr ca (TExprAssign e1 e2) =
     let ca'@(cdo, dS, tS, jt, su, mn) = cExpr (cExprAddr ca e1) e2
@@ -876,13 +903,13 @@ cExpr ca (TExprAssign e1 e2) =
         tp = if (eTp == TUnknown) || (vTp == TBool && eTp == TBool) ||
                 (isIntType eTp && isIntType vTp) || (canCoerceInto cdo eTp vTp)
              then vTp
-             else error $ "cannot coerce " ++ (show eTp) ++ " into " ++ (show vTp)
+             else error $ "cExpr assign: cannot coerce " ++ (show eTp) ++ " into " ++ (show vTp)
         su' = (take (length su - 2) su) ++ [("", tp)]
         tS' = tS ++ ["pop %rdi", "pop %rsi", "mov %rdi, (%rsi)", "push %rdi"]
     in (cdo, dS, tS', jt, su', mn)
 
 cExpr (cdo@(oi, _, _, _), dS, tS, jt, su, mn) (TExprNewObj cName) =
-    let (oSize, _, _) = oi ! cName
+    let (oSize, _, _) = case Data.Map.lookup cName oi of Just x -> x
         padding = ((length su) `mod` 2) * 8
         s = ["mov $" ++ (show oSize) ++ ", %rdi",
              "sub $" ++ (show padding) ++ ", %rsp",
@@ -931,12 +958,13 @@ cExprAddr ca@(cdo, dS, tS, jt, su, mn) (TExprVar v) =
 cExprAddr ca (TExprDotAccess e v) =
     let (cdo@(oi, cDefMap, _, _), dS, tS, jt, su, mn) = cExpr ca e
         (_, TClass cName) = last su
-        Just (_, _, (_, vTp, _)) = -- FIXME: acc and isStatic are ignored
-            case cDefMap ! cName of
-                (_, _, attrList, _) ->
-                    find (\(acc, isStatic, (vn, tp, _)) -> vn == v) attrList
-        vOffset = case oi ! cName of
-                    (_, _, m) -> m ! v
+        -- Just (_, _, (_, vTp, _)) = -- FIXME: acc and isStatic are ignored
+        --     case cDefMap ! cName of
+        --         (_, _, attrList, _) ->
+        --             find (\(acc, isStatic, (vn, tp, _)) -> vn == v) attrList
+        Just (_, _, (_, vTp, _)) = cdoGetClassAttrDef cdo cName v
+        vOffset = case Data.Map.lookup cName oi of
+                    Just (_, _, m) -> case Data.Map.lookup v m of Just x -> x
         tS' = tS ++ ["pop %rax", "add $" ++ (show vOffset) ++ ", %rax", "push %rax"]
         su' = init su ++ [("", vTp)]
     in (cdo, dS, tS', jt, su', mn)

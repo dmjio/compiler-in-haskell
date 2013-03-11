@@ -4,8 +4,8 @@ class Pos { // implies "extends Object"
 
     void init() {
         // super.init();
-        self.x = 42;
-        self.b = true;
+        this.x = 42;
+        this.b = true;
     }
 
     void dumpX() {
@@ -14,7 +14,7 @@ class Pos { // implies "extends Object"
     }
 
     void dumpB() {
-        print("b is ", self.b, '\n');
+        print("b is ", this.b, '\n');
     }
 
     void setX(int x) {
@@ -35,13 +35,13 @@ class Point extends Pos {
     }
 
     void dumpY() {
-        print(self.y);
+        print(this.y);
         print('\n');
     }
 
     void dumpPoint() {
         //     (        x   ,         y   )\n
-        print('(', self.x, ", ", self.y, ")\n");
+        print('(', this.x, ", ", this.y, ")\n");
     }
 
     void setY(int y) {

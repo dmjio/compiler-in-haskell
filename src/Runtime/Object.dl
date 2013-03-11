@@ -10,16 +10,16 @@ class Object {
 
     void init() {
         // after moving to a temperate register it will increase by 1
-        self.__dl_ref = 0;
+        this.__dl_ref = 0;
     }
 
     protected void __dl_incref() {
-        self.__dl_ref++;
+        this.__dl_ref++;
     }
 
     protected void __dl_decref() {
-        if (--self.__dl_ref <= 0) {
-            __dlib_free(self);
+        if (--this.__dl_ref <= 0) {
+            __dlib_free((int)this);
         }
     }
 }
