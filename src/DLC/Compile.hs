@@ -11,6 +11,9 @@ import Text.Regex.Posix
 import DLC.CompileDataObject
 import DLC.TAST
 
+showSU :: [(String, TType)] -> String
+showSU x = " # " ++ (show x)
+
 regTable :: [[String]]
 regTable = [
     ["%rax", "%eax",  "%ax",  "%al"],
@@ -20,6 +23,12 @@ regTable = [
     ["%rcx", "%ecx",  "%cx",  "%cl"],
     [ "%r8", "%r8d", "%r8w", "%r8b"],
     [ "%r9", "%r9d", "%r9w", "%r9b"]]
+
+convFName :: String -> String
+convFName f =
+    if (f =~ "^__dlib.*$") :: Bool
+    then drop 1 f
+    else "___dl_" ++ f
 
 compileTo :: Handle -> CDO -> IO ()
 compileTo h cdo =
@@ -36,14 +45,16 @@ writeDataSection h d = do
                  then do {hPutStrLn h ""; hPutStrLn h x}
                  else hPutStrLn h $ "    " ++ x)
           d
-                    
 
 writeTextSection :: Handle -> [String] -> IO ()
 writeTextSection h d = do
+    hPutStrLn h ""
     hPutStrLn h ".text"
-    mapM_ (\x -> if (x =~ "^.*:$") :: Bool
+    mapM_ (\x -> if (x =~ "^\\.globl.*$") :: Bool
                  then do {hPutStrLn h ""; hPutStrLn h x}
-                 else hPutStrLn h $ "    " ++ x)
+                 else if (x =~ "^.*:$") :: Bool
+                      then hPutStrLn h x
+                      else hPutStrLn h ("    " ++ x))
           d
 
 compileClass :: CDO -> ([String], [String]) -> String -> ([String], [String])
@@ -60,7 +71,7 @@ compileClass cdo (asData, asText) cName =
                            methodTable
         sup = if cName == "Object" then "$0" else superName ++ "$$"
         asData' = asData ++ [cName ++ "$$:", ".quad " ++ sup] ++
-                  map (".quad " ++) methodTable'
+                  map (\x -> ".quad " ++ (convFName x)) methodTable'
         resolveClassName :: String -> Maybe String
         resolveClassName cmName = r cName
             where r :: String -> Maybe String
@@ -136,7 +147,7 @@ compileMethod cdo cName (asData, asText) mName =
                      "ret"]
     in
         (asData ++ asDataInc,
-         asText ++ [".globl " ++ mName, mName' ++ ":"]
+         asText ++ [".globl " ++ (convFName mName'), (convFName mName') ++ ":"]
          ++ beforeBody ++ asMethodBody ++ afterBody)
 
 isIntType :: TType -> Bool
@@ -244,29 +255,28 @@ cStmt ca@(cdo, dataSec, textSec, jt, su, mn) (TStmtPrint e) = -- print(15)
     let (_, dataSec', textSec', _, su', _) = cExpr ca e
         (_, tp_e) = last su'
         ptname = if tp_e == TInt || tp_e == TInt32
-                 then "_dlib_print_num"
+                 then "__dlib_print_num"
                  else case tp_e of
-                        TByte -> "_dlib_print_char"
-                        TBool -> "_dlib_print_bool"
+                        TByte -> "__dlib_print_char"
+                        TBool -> "__dlib_print_bool"
         padding = ((length su - 1) `mod` 2) * 8
         callcText = ["pop " ++ (regTable !! 1 !! 0),
                      "sub $" ++ (show padding) ++ ", %rsp",
-                     "call " ++ ptname, -- no return value, only one arg
+                     "call " ++ (convFName ptname), -- no return value, only one arg
                      "add $" ++ (show padding) ++ ", %rsp"]
     in (cdo, dataSec', textSec' ++ callcText, jt, su, mn) -- not su'
 
-cStmt ca@(cdo, dataSec, textSec, jt, su, fName) (TStmtIf e b1 b2) = -- if (c) {b1} else {b2}
-    let (_, dataSec', textSec', _, su', _) = cExpr ca e
+cStmt ca@(cdo, dataSec, textSec, _, su, fName) (TStmtIf e b1 b2) = -- if (c) {b1} else {b2}
+    let (_, dataSec', textSec', jt, su', _) = cExpr ca e
         (_, tp_e) = last su'
         elseT = getJTag fName jt
         endT = getJTag fName (jt+1)
-        condSec = ["pop %rdi", "cmp %rdi, $0", "jz " ++ elseT]
-        ca' = ((caAddJTag 2) . (caAppendText condSec))
-              (cdo, dataSec', textSec', jt, su, fName)
-        ca'' = caAppendText ["jmp " ++ endT, elseT ++ ":"]
+        condSec = ["pop %rdi", "cmpb $0, %dil", "jz " ++ elseT ++ " # else"]
+        ca' = (cdo, dataSec', textSec' ++ condSec, jt + 2, su, fName)
+        ca'' = caAppendText ["jmp " ++ endT ++ " # endif", elseT ++ ": # else"]
                             (foldl cBodyStmt ca' b1)
 
-        ca''' = caAppendText [endT ++ ":"] (foldl cBodyStmt ca'' b2)
+        ca''' = caAppendText [endT ++ ": # endif"] (foldl cBodyStmt ca'' b2)
     in if not (tp_e == TBool || tp_e == TUnknown)
        then error $ "expression in if's cond section must be boolean, found " ++ (show tp_e)
        else ca'''
@@ -289,7 +299,7 @@ cStmt ca@(cdo, dataSec, textSec, jt, su, fName) (TStmtFor initS condS incrS b) =
         (_, dataSec', textSec', jt', su', _) = cStmt ca' whileStmt
         su'' = reverse $ drop nTVar $ reverse su'
         undefS = if nTVar /= 0
-                 then ["add " ++ (show (nTVar * 8)) ++ "%rsp"]
+                 then ["add $" ++ (show (nTVar * 8)) ++ ", %rsp"]
                  else []
     in (cdo, dataSec', textSec' ++ undefS , jt', su'', fName)
 
@@ -299,12 +309,12 @@ cStmt ca@(cdo, dataSec, textSec, jt, su, fName) (TStmtFor initS condS incrS b) =
 --  [b]
 --  goto sTag
 -- eTag:
-cStmt ca@(cdo, dataSec, textSec, jt, su, fName) (TStmtWhile e b) = -- while(e) {b;}
-    let sTag = getJTag fName jt
+cStmt ca@(cdo, dataSec, textSec, _, su, fName) (TStmtWhile e b) = -- while(e) {b;}
+    let (_, dataSec', textSec', jt, su', _) = cExpr ca e
+        sTag = getJTag fName jt
         eTag = getJTag fName (jt+1)
-        (_, dataSec', textSec', _, su', _) = cExpr ca e
         (_, tp_e) = last su'
-        checkCondSec = [sTag ++ ":", "pop %rdi", "cmp %rdi, $0", "jz " ++ eTag]
+        checkCondSec = [sTag ++ ":", "pop %rdi", "cmpb $0, %dil", "jz " ++ eTag]
         ca' = (cdo, dataSec', textSec' ++ checkCondSec, jt+2, su, fName) -- su, not su'
         ca'' = caAppendText ["jmp " ++ sTag, eTag ++ ":"] (foldl cBodyStmt ca' b)
     in if not (tp_e == TBool || tp_e == TUnknown)
@@ -500,18 +510,19 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                      ca'' = prepareArguments (cdo, d, t, jt, su', mn)
                                              ((TExprVar "$dlc_obj"):args)
                                              tpList
+                     fOffset = cdoGetFuncOffset cdo objClass f
                      cTableS = ["movq (%rsp), %rax"] ++
                                (if objExpr == TExprVar "super"
                                 then ["movq (%rax), %rax"]
                                 else []) ++
-                               ["add $" ++ (show $ cdoGetFuncOffset cdo objClass f) ++ ", %rax",
-                                "mov (%rax), %rax"] -- get addr of the function
+                               ["add $" ++ (show fOffset) ++ ", %rax"{-,
+                                "mov (%rax), %rax"-}] -- get addr of the function
                      (padding, ca''') =
                         alignStack $ popArguments (caAppendText cTableS ca'')
                                                   (length tpList)
 
                      -- +8: for the extra $dlc_obj
-                     ca'''' = unalignStack (caAppendText ["callq %rax"] ca''') (padding + 8)
+                     ca'''' = unalignStack (caAppendText ["callq *%rax"] ca''') (padding + 8)
                  in -- FIXME: allow accessing protected/private non-static attribute methods
                     --        from anywhere for now...
                     -- if objClass /= cName && acc == TPrivate
@@ -519,8 +530,9 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                     -- else
                     case ca'''' of
                         (cdo', d', t', jt', su', mn') ->
-                            (cdo', d', t' ++ ["push %rax"],
-                             jt', (init su') ++ [("", retTp)], mn')
+                            let su = (init su') ++ [("", retTp)]
+                            in (cdo', d', t' ++ ["push %rax" ++ (showSU su)],
+                               jt', su, mn')
 
 
         callFunc :: CArg -> String -> [TExpr] -> [TType] -> TType -> CArg
@@ -528,7 +540,7 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
             let ca' = prepareArguments ca args argTpList
                 (padding, ca'') = alignStack $ popArguments ca' $ length args
                 ca'''@(cdo, d, t, jt, su, mn) =
-                    unalignStack (caAppendText ["call " ++ f] ca'') padding
+                    unalignStack (caAppendText ["call " ++ (convFName f)] ca'') padding
             in (cdo, d, t ++ ["push %rax"], jt, su ++ [("", retTp)], mn)
 
 cExpr ca (TExprAdd e1 e2) =
@@ -705,8 +717,8 @@ cExpr ca (TExprLeq e1 e2) =
         tag1 = getJTag mn jt
         tag2 = getJTag mn (jt+1)
         jt' = jt + 2
-        tS' = tS ++ ["%pop %rsi", "pop %rdi",
-                     "cmp %rdi, %rsi", -- cmp e1, e2
+        tS' = tS ++ ["pop %rsi", "pop %rdi",
+                     "cmpq %rdi, %rsi", -- cmp e1, e2
                      "jle " ++ tag1,   -- jle T1
                      "mov $0, %rdi",   --     mov $0, %rdi
                      "jmp " ++ tag2,   --     jmp T2
@@ -724,8 +736,8 @@ cExpr ca (TExprGeq e1 e2) =
         tag1 = getJTag mn jt
         tag2 = getJTag mn (jt+1)
         jt' = jt + 2
-        tS' = tS ++ ["%pop %rsi", "pop %rdi",
-                     "cmp %rdi, %rsi",
+        tS' = tS ++ ["pop %rsi", "pop %rdi",
+                     "cmpq %rdi, %rsi",
                      "jge " ++ tag1,
                      "mov $0, %rdi",
                      "jmp " ++ tag2,
@@ -743,8 +755,8 @@ cExpr ca (TExprLe e1 e2) =
         tag1 = getJTag mn jt
         tag2 = getJTag mn (jt+1)
         jt' = jt + 2
-        tS' = tS ++ ["%pop %rsi", "pop %rdi",
-                     "cmp %rdi, %rsi",
+        tS' = tS ++ ["pop %rsi", "pop %rdi",
+                     "cmpq %rdi, %rsi",
                      "jl " ++ tag1,
                      "mov $0, %rdi",
                      "jmp " ++ tag2,
@@ -762,8 +774,8 @@ cExpr ca (TExprGe e1 e2) =
         tag1 = getJTag mn jt
         tag2 = getJTag mn (jt+1)
         jt' = jt + 2
-        tS' = tS ++ ["%pop %rsi", "pop %rdi",
-                     "cmp %rdi, %rsi",
+        tS' = tS ++ ["pop %rsi", "pop %rdi",
+                     "cmpq %rdi, %rsi",
                      "jg " ++ tag1,
                      "mov $0, %rdi",
                      "jmp " ++ tag2,
@@ -829,7 +841,7 @@ cExpr (cdo, dS, tS, jt, su, mn) (TExprStr s) =
                      "mov $" ++ (show $ length s) ++ ", " ++ (regTable !! 2 !! 0),
                      "mov $4, " ++ (regTable !! 3 !! 0),
                      "sub $" ++ (show padding) ++ ", %rsp",
-                     "call __DL_Array$__dl_copyFromCBytes",
+                     "call " ++ (convFName "__DL_Array$__dl_copyFromCBytes"),
                      "add $" ++ (show padding) ++ ", %rsp",
                      "push %rax"]
         su' = su ++ [("", TArray 1 TByte)]
@@ -849,7 +861,7 @@ cExpr ca (TExprConvType tp e) =
         su' = (init su) ++ [("", tp)]
         tS' = if _tBoolConvert
               then tS ++ ["pop %rax",       -- pop %rax
-                          "cmp %rax, $0",   -- cmp %rax, $0
+                          "cmpq $0, %rax",   -- cmp %rax, $0
                           "jz " ++ tag,    -- jz T
                           tag ++ ":",      -- T:
                           "mov $1, %rax",   --    mov $1, %rax
@@ -915,7 +927,9 @@ cExpr (cdo@(oi, _, _, _), dS, tS, jt, su, mn) (TExprNewObj cName) =
              "sub $" ++ (show padding) ++ ", %rsp",
              "call _malloc",
              "add $" ++ (show padding) ++ ", %rsp",
-             "mov " ++ cName ++ "$$, (%rax)",
+             -- "movq " ++ cName ++ "$$, (%rax)",
+             "movq " ++ cName ++ "$$(%rip), %rdi",
+             "movq %rdi, (%rax)",
              "push %rax"]
     in (cdo, dS, tS ++ s, jt, su ++ [("", TClass cName)], mn)
 
@@ -936,10 +950,10 @@ cExpr ca (TExprNewArr tp [e]) =
         s = ["pop %rdi",                            -- len
              "sub $" ++ (show padding) ++ ", %rsp",
              "mov $" ++ (show $ bsize) ++ ", %rsi", -- bsize
-             "call __DL_Array$dl_create",
+             "call " ++ (convFName "__DL_Array$dl_create"),
              "add $" ++ (show padding) ++ ", %rsp"] ++
             (case tp of
-                 TClass _ -> ["movq __DL_RefArray$$, (%rax)"]
+                 TClass _ -> ["movq __DL_RefArray$$(%rip), (%rax)"]
                  _ -> []) ++
             ["push %rax"]
         su' = (init su) ++ [("", TArray 1 tp)]
