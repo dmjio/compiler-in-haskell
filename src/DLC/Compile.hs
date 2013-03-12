@@ -12,7 +12,8 @@ import DLC.CompileDataObject
 import DLC.TAST
 
 showSU :: [(String, TType)] -> String
-showSU x = " # " ++ (show x)
+-- showSU x = " # " ++ (show x)
+showSU _ = ""
 
 regTable :: [[String]]
 regTable = [
@@ -120,11 +121,12 @@ compileMethod cdo cName (asData, asText) mName =
         --
         -- mName':  String  => className$methodName or just methodName
         stackUsage :: [(String, TType)]
-        stackUsage = (if (length argList) == 0
+        stackUsage = argList ++
+                     (if (length argList) == 0
                       then [("", TUnknown), ("", TUnknown)]
                       else if (length argList) == 1
                            then [("", TUnknown)]
-                           else []) ++ argList
+                           else [])-- ++ argList
         beforeBody :: [String]
         beforeBody = ["push %rbp", "mov %rsp, %rbp"] ++
                      map (\(rIdx, _) -> "push " ++ (regTable !! rIdx !! 0))
@@ -259,7 +261,7 @@ cStmt ca@(cdo, dataSec, textSec, jt, su, mn) (TStmtPrint e) = -- print(15)
                  else case tp_e of
                         TByte -> "__dlib_print_char"
                         TBool -> "__dlib_print_bool"
-        padding = ((length su - 1) `mod` 2) * 8
+        padding = ((length su) `mod` 2) * 8
         callcText = ["pop " ++ (regTable !! 1 !! 0),
                      "sub $" ++ (show padding) ++ ", %rsp",
                      "call " ++ (convFName ptname), -- no return value, only one arg
@@ -267,19 +269,20 @@ cStmt ca@(cdo, dataSec, textSec, jt, su, mn) (TStmtPrint e) = -- print(15)
     in (cdo, dataSec', textSec' ++ callcText, jt, su, mn) -- not su'
 
 cStmt ca@(cdo, dataSec, textSec, _, su, fName) (TStmtIf e b1 b2) = -- if (c) {b1} else {b2}
-    let (_, dataSec', textSec', jt, su', _) = cExpr ca e
+    let (_, dataSec', textSec', jt, su', _) =
+            cExpr (caAppendText ["# before if, su: " ++ (show su)] ca) e
         (_, tp_e) = last su'
         elseT = getJTag fName jt
         endT = getJTag fName (jt+1)
-        condSec = ["pop %rdi", "cmpb $0, %dil", "jz " ++ elseT ++ " # else"]
+        condSec = ["pop %rdi", "cmpb $0, %dil", "jz " ++ elseT]
         ca' = (cdo, dataSec', textSec' ++ condSec, jt + 2, su, fName)
-        ca'' = caAppendText ["jmp " ++ endT ++ " # endif", elseT ++ ": # else"]
+        ca'' = caAppendText ["jmp " ++ endT, elseT ++ ":"]
                             (foldl cBodyStmt ca' b1)
 
-        ca''' = caAppendText [endT ++ ": # endif"] (foldl cBodyStmt ca'' b2)
+        ca'''@(_, _, _, _, su''', _) = caAppendText [endT ++ ":"] (foldl cBodyStmt ca'' b2)
     in if not (tp_e == TBool || tp_e == TUnknown)
        then error $ "expression in if's cond section must be boolean, found " ++ (show tp_e)
-       else ca'''
+       else caAppendText ["# after if, su: " ++ (show su''')] ca'''
 
 -- for (initS; condS; incrS) {b}
 --   =>
@@ -326,13 +329,16 @@ cStmt ca@(cdo, dataSec, textSec, _, su, fName) (TStmtWhile e b) = -- while(e) {b
 
 -- FIXME: "return;" with no argument for void methods
 cStmt ca@(cdo, _, _, _, su, fName) (TStmtReturn e) =
-    let ca'@(_, _, _, _, su', _) = cExpr ca e
+    let ca'@(cdo', dS', tS', jt', su', mn') = cExpr ca e
         (_, tp_e) = last su'
         tp = case getFuncReturnType cdo fName of
                     Just x -> x
         cleanUp = ["pop %rax", "add $" ++ (show $ (length su) * 8) ++ ", %rsp", "pop %rbp", "ret"]
     in if {- tp == TVoid || -} canCoerceInto cdo tp_e tp
-       then caAppendText cleanUp ca' -- stack usage is incurrect; but it will be thrown away
+       then -- stack usage doesn't contain the returned value.
+            -- (as if return is a function call)
+            -- or it would raise issues for return inside a if branch.
+            caAppendText cleanUp (cdo', dS', tS', jt', init su', mn')
        else error $ "return value type for " ++ fName ++ " is incorrect"
 
 
@@ -455,14 +461,17 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
         
         -- prepareArguments: calculate arguments, do args type checking, push them onto stack
         prepareArguments :: CArg -> [TExpr] -> [TType] -> CArg
-        prepareArguments ca args tpList =
+        prepareArguments orig_ca@(_, _, _, _, su, _) args tpList =
             if length args /= length tpList
             then error $ "wrong number of args"
             else let args' = (drop 6 args) ++ (reverse $ take 6 args)
                      tpList' = (drop 6 tpList) ++ (reverse $ take 6 tpList)
                      -- orig: 1 2 3 4 5 6 7 8
                      -- now: 7 8 6 5 4 3 2 1
+                     ca = caAppendText ["# before prepareArguments, old su: " ++ (show su)]
+                                       orig_ca
                      ca'@(cdo', dataSec', textSec', jt', su', mn') = foldl cExpr ca args'
+                     ca'' = caAppendText ["# new su: " ++ (show su')]
                      wrongTp = find (\((_, sutp), argTp) -> not $ canCoerceInto cdo' sutp argTp)
                                     (zip (reverse su') (reverse tpList'))
                  in case wrongTp of
@@ -478,14 +487,18 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                     foldl (\(acc, rt) _ -> (acc ++ ["pop " ++ ((head rt) !! 0)], drop 1 rt))
                           ([], drop 1 regTable)
                           (take argN $ repeat 0xDEADBEEF)
-            in (cdo, dataSec, textSec ++ popArgs, jt, reverse $ drop argN $ reverse su, mn)
+                su' = reverse $ drop argN $ reverse su
+            in (cdo, dataSec, textSec ++ popArgs ++
+                              ["# old su: " ++ (show su),
+                               "# after popArguments, new su: " ++ (show su')],
+                jt, su', mn)
         alignStack :: CArg -> (Int, CArg)
         alignStack ca@(cdo, dataSec, textSec, jt, su, mn) =
             if paddingSize == 0
             then (paddingSize, ca)
             else (paddingSize,
                   (cdo, dataSec,
-                   textSec ++ ["sub $" ++ (show paddingSize) ++ ", %rsp"],
+                   textSec ++ ["sub $" ++ (show paddingSize) ++ ", %rsp # " ++ (show su)],
                    jt, su, mn)) -- take care: su doesn't contain the padding variable
             where
                 paddingSize = ((length su) * 8) `mod` 16
@@ -718,7 +731,7 @@ cExpr ca (TExprLeq e1 e2) =
         tag2 = getJTag mn (jt+1)
         jt' = jt + 2
         tS' = tS ++ ["pop %rsi", "pop %rdi",
-                     "cmpq %rdi, %rsi", -- cmp e1, e2
+                     "cmpq %rsi, %rdi", -- cmp e2, e1
                      "jle " ++ tag1,   -- jle T1
                      "mov $0, %rdi",   --     mov $0, %rdi
                      "jmp " ++ tag2,   --     jmp T2
@@ -737,7 +750,7 @@ cExpr ca (TExprGeq e1 e2) =
         tag2 = getJTag mn (jt+1)
         jt' = jt + 2
         tS' = tS ++ ["pop %rsi", "pop %rdi",
-                     "cmpq %rdi, %rsi",
+                     "cmpq %rsi, %rdi",
                      "jge " ++ tag1,
                      "mov $0, %rdi",
                      "jmp " ++ tag2,
@@ -756,7 +769,7 @@ cExpr ca (TExprLe e1 e2) =
         tag2 = getJTag mn (jt+1)
         jt' = jt + 2
         tS' = tS ++ ["pop %rsi", "pop %rdi",
-                     "cmpq %rdi, %rsi",
+                     "cmpq %rsi, %rdi",
                      "jl " ++ tag1,
                      "mov $0, %rdi",
                      "jmp " ++ tag2,
@@ -775,7 +788,7 @@ cExpr ca (TExprGe e1 e2) =
         tag2 = getJTag mn (jt+1)
         jt' = jt + 2
         tS' = tS ++ ["pop %rsi", "pop %rdi",
-                     "cmpq %rdi, %rsi",
+                     "cmpq %rsi, %rdi",
                      "jg " ++ tag1,
                      "mov $0, %rdi",
                      "jmp " ++ tag2,
