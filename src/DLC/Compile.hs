@@ -143,7 +143,7 @@ compileMethod cdo cName (asData, asText) mName =
         su :: [(String, TType)]
         (_, asDataInc, asMethodBody, _, su, _) =
             foldl cBodyStmt
-                  (cdo, [], ["# mBody: " ++ (show mBody)], 1, stackUsage, mName')
+                  (cdo, [], [], 1, stackUsage, mName')
                   mBody
         afterBody :: [String]
         afterBody = ["add $" ++ (show $ 8 * (length su)) ++ ", %rsp",
@@ -957,7 +957,7 @@ cExpr ca (TExprAssign (TExprArrAccess eArr eSub) e) =
                                 [TExprVar "$dlc_sub",
                                  (TExprConvType TInt $ TExprVar "$dlc_e")])
         su''' = (take (length su'' - 4) su'') ++ [("", apTp)]
-        tS''' = ["add $8, %rsp", "pop %rax", "add $16, %rsp", "push %rax"]
+        tS''' = tS'' ++ ["add $8, %rsp", "pop %rax", "add $16, %rsp", "push %rax"]
     in if canCoerceInto cdo eTp apTp
        then (cdo'', dS'', tS''', jt'', su''', mn'')
        else error $ "cExpr arr access: cannot coerce " ++ (show eTp) ++ " into " ++ (show apTp)
@@ -999,14 +999,17 @@ cExpr ca (TExprNewArr tp [e]) =
         arrType = case tp of
                         TClass _ -> "__DL_RefArray"
                         _ -> "__DL_Array"
-        padding = (length su `mod` 2) * 8
+        -- su contains len, which will be popped out
+        -- so we need to -1.
+        padding = ((length su - 1) `mod` 2) * 8
         s = ["pop %rdi",                            -- len
              "sub $" ++ (show padding) ++ ", %rsp",
              "mov $" ++ (show $ bsize) ++ ", %rsi", -- bsize
-             "call " ++ (convFName "__DL_Array$dl_create"),
+             "call " ++ (convFName "__DL_Array$__dl_create"),
              "add $" ++ (show padding) ++ ", %rsp"] ++
             (case tp of
-                 TClass _ -> ["movq __DL_RefArray$$(%rip), (%rax)"]
+                 TClass _ -> ["movq __DL_RefArray$$(%rip), %rdi",
+                              "movq %rdi, (%rax)"]
                  _ -> []) ++
             ["push %rax"]
         su' = (init su) ++ [("", TArray 1 tp)]
