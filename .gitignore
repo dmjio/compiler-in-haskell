@@ -1,3 +1,4 @@
 dlc
 !src/DLC
 *.swp
+examples/test*

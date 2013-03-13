@@ -320,17 +320,18 @@ cStmt ca@(cdo, dataSec, textSec, jt, su, fName) (TStmtFor initS condS incrS b) =
 --  [b]
 --  goto sTag
 -- eTag:
-cStmt ca@(cdo, dataSec, textSec, _, su, fName) (TStmtWhile e b) = -- while(e) {b;}
-    let (_, dataSec', textSec', jt, su', _) = cExpr ca e
-        sTag = getJTag fName jt
-        eTag = getJTag fName (jt+1)
+cStmt ca@(cdo, dataSec, textSec, jt, su, fName) (TStmtWhile e b) = -- while(e) {b;}
+    let sTag = getJTag fName jt
+        eTag = getJTag fName (jt + 1)
+        (_, dataSec', textSec', jt', su', _) =
+            cExpr (cdo, dataSec,
+                   textSec ++ ["# begin while", sTag ++ ":"],
+                   jt + 2, su, fName) e
         (_, tp_e) = last su'
-        checkCondSec = ["# begin while",
-                        sTag ++ ":",
-                        "pop %rdi",
+        checkCondSec = ["pop %rdi",
                         "cmpb $0, %dil",
                         "jz " ++ eTag]
-        ca' = (cdo, dataSec', textSec' ++ checkCondSec, jt+2, su, fName) -- su, not su'
+        ca' = (cdo, dataSec', textSec' ++ checkCondSec, jt', su, fName) -- su, not su'
         ca'' = caAppendText ["jmp " ++ sTag, eTag ++ ":"] (foldl cBodyStmt ca' b)
     in if not (tp_e == TBool || tp_e == TUnknown)
        then error "expression in while's cond section must be bool"
@@ -570,7 +571,8 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
 
                      -- +8: for the extra $dlc_obj
                      -- ca'''': ..., objExpr
-                     ca'''' = unalignStack (caAppendText ["callq *%rax"] ca''') (padding + 8)
+                     ca'''' = unalignStack (caAppendText ["callq *%rax # " ++ f] ca''')
+                                           (padding + 8)
                  in -- FIXME: allow accessing protected/private non-static attribute methods
                     --        from anywhere for now...
                     -- if objClass /= cName && acc == TPrivate
@@ -724,7 +726,7 @@ cExpr ca (TExprDecBy (TExprArrAccess eArr eSub) e) =
 -- pop ptr, n
 -- push rax
 cExpr ca (TExprIncBy e1 e2) =
-    let (cdo, dS, tS, jt, su, mn) = foldl cExpr ca [e1, e2]
+    let (cdo, dS, tS, jt, su, mn) = cExpr (cExprAddr ca e1) e2 -- foldl cExpr ca [e1, e2]
         [(_, t1), (_, t2)] = drop (length su - 2) su
         tS' = tS ++ ["pop %rsi", "pop %rax", "mov %rax, %rdi", "mov (%rdi), %rdi",
                      "add %rsi, %rdi", "mov %rdi, (%rax)", "add $16, %rsp", "push %rax"]
@@ -732,7 +734,7 @@ cExpr ca (TExprIncBy e1 e2) =
         su' = (take (length su - 2) su) ++ [("", tp)]
     in (cdo, dS, tS', jt, su', mn)
 cExpr ca (TExprDecBy e1 e2) =
-    let (cdo, dS, tS, jt, su, mn) = foldl cExpr ca [e1, e2]
+    let (cdo, dS, tS, jt, su, mn) = cExpr (cExprAddr ca e1) e2 -- foldl cExpr ca [e1, e2]
         [(_, t1), (_, t2)] = drop (length su - 2) su
         tS' = tS ++ ["pop %rsi", "pop %rax", "mov %rax, %rdi", "mov (%rdi), %rdi",
                      "sub %rsi, %rdi", "mov %rdi, (%rax)", "add $16, %rsp", "push %rax"]
@@ -1023,7 +1025,9 @@ cExpr ca (TExprNewArr tp [e]) =
 cExprAddr :: CArg -> TExpr -> CArg
 cExprAddr ca@(cdo, dS, tS, jt, su, mn) (TExprVar v) =
     let Just (idx, (_, tp)) = find (\(_, (vn, _)) -> vn == v) $ zip [0..] su
-        tS' = tS ++ ["mov %rbp, %rdi", "add $" ++ (show $ (idx+1)*8) ++ ", %rdi", "push %rdi"]
+        tS' = tS ++ ["mov %rbp, %rdi",
+                     "sub $" ++ (show $ (idx+1)*8) ++ ", %rdi",
+                     "push %rdi"]
     in (cdo, dS, tS', jt, su ++ [("", tp)], mn)
 
 cExprAddr ca (TExprDotAccess e v) =

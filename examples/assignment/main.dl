@@ -1,0 +1,6 @@
+int main() {
+    int n = 0;
+    n = 42;
+    print(n);
+    return 0;
+}
