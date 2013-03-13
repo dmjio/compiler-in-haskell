@@ -55,21 +55,23 @@ class Point extends Pos {
 }
 
 int main() {
-    Point p = new Point();
-    p.dumpPoint();
-    p.setP(1, 2);
-    p.dumpPoint();
-
     Point[] parr = new Point[10];
-    // parr[0..9] are not created!
 
     for (int i = 0; i < parr.length(); i++) {
         parr[i] = new Point();
     }
 
     for (int i = 0; i < parr.length(); i++) {
-        parr[i].setP(i, i);  // parr.get(0).setP(i, i);
-        parr[i].dumpPoint(); // parr.get(0).dumpPoint();
+        parr[i].setP(i, i);
+        parr[i].dumpPoint();
+    }
+
+    print();
+    Point p = new Point();
+    if (p.x == 42) {
+        print("success\n");
+    } else {
+        print("FAIL\n");
     }
 
     return 0;

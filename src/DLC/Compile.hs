@@ -615,14 +615,14 @@ cExpr ca (TExprMul e1 e2) =
     let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
         [(_, e1tp), (_, e2tp)] = drop (length su - 2) su
         tp = coerce e1tp e2tp --     e2           e1        e1 *= e2
-        textSec' = textSec ++ ["pop %rsi", "pop %rdi", "add %rsi, %rdi", "push %rdi"]
+        textSec' = textSec ++ ["pop %rsi", "pop %rdi", "imulq %rsi, %rdi", "push %rdi"]
         su' = (take (length su - 2) su) ++ [("", tp)]
     in (cdo, dataSec, textSec', jt, su', mn)
 cExpr ca (TExprDiv e1 e2) =
     let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
         [(_, e1tp), (_, e2tp)] = drop (length su - 2) su
         tp = coerce e1tp e2tp --     e2           e1        e1 /= e2
-        textSec' = textSec ++ ["pop %rsi", "pop %rdi", "add %rsi, %rdi", "push %rdi"]
+        textSec' = textSec ++ ["pop %rsi", "pop %rdi", "idivq %rsi, %rdi", "push %rdi"]
         su' = (take (length su - 2) su) ++ [("", tp)]
     in (cdo, dataSec, textSec', jt, su', mn)
 
@@ -723,13 +723,12 @@ cExpr ca (TExprDecBy (TExprArrAccess eArr eSub) e) =
 -- rsi = n
 -- rdi += rsi
 -- *rax = rdi
--- pop ptr, n
--- push rax
+-- push rdi
 cExpr ca (TExprIncBy e1 e2) =
     let (cdo, dS, tS, jt, su, mn) = cExpr (cExprAddr ca e1) e2 -- foldl cExpr ca [e1, e2]
         [(_, t1), (_, t2)] = drop (length su - 2) su
         tS' = tS ++ ["pop %rsi", "pop %rax", "mov %rax, %rdi", "mov (%rdi), %rdi",
-                     "add %rsi, %rdi", "mov %rdi, (%rax)", "add $16, %rsp", "push %rax"]
+                     "add %rsi, %rdi", "mov %rdi, (%rax)", "push %rdi"]
         tp = coerce t1 t2
         su' = (take (length su - 2) su) ++ [("", tp)]
     in (cdo, dS, tS', jt, su', mn)
@@ -737,7 +736,7 @@ cExpr ca (TExprDecBy e1 e2) =
     let (cdo, dS, tS, jt, su, mn) = cExpr (cExprAddr ca e1) e2 -- foldl cExpr ca [e1, e2]
         [(_, t1), (_, t2)] = drop (length su - 2) su
         tS' = tS ++ ["pop %rsi", "pop %rax", "mov %rax, %rdi", "mov (%rdi), %rdi",
-                     "sub %rsi, %rdi", "mov %rdi, (%rax)", "add $16, %rsp", "push %rax"]
+                     "sub %rsi, %rdi", "mov %rdi, (%rax)", "push %rdi"]
         tp = coerce t1 t2
         su' = (take (length su - 2) su) ++ [("", tp)]
     in (cdo, dS, tS', jt, su', mn)
@@ -976,6 +975,7 @@ cExpr ca (TExprAssign e1 e2) =
         tS' = tS ++ ["pop %rdi", "pop %rsi", "mov %rdi, (%rsi)", "push %rdi"]
     in (cdo, dS, tS', jt, su', mn)
 
+-- FIXME: call init
 cExpr (cdo@(oi, _, _, _), dS, tS, jt, su, mn) (TExprNewObj cName) =
     let (oSize, _, _) = case Data.Map.lookup cName oi of Just x -> x
         padding = ((length su) `mod` 2) * 8
