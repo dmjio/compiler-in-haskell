@@ -1,0 +1,19 @@
+class T {
+    public void hello() {
+        print('T', '\n');
+    }
+}
+
+class G extends T {
+    public void hello() {
+        print('G', '\n');
+    }
+}
+
+int main() {
+    T t1 = new T();
+    T t2 = new G();
+    t1.hello();
+    t2.hello();
+    return 0;
+}

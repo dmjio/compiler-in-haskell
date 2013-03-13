@@ -557,12 +557,13 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                                              ((TExprVar "$dlc_obj"):args)
                                              tpList
                      fOffset = cdoGetFuncOffset cdo objClass f
-                     cTableS = ["movq (%rsp), %rax"] ++
+                     cTableS = ["movq (%rsp), %rax", -- get pointer to the obj
+                                "movq (%rax), %rax"] ++ -- get pointer to the MT
                                (if objExpr == TExprVar "super"
                                 then ["movq (%rax), %rax"]
                                 else []) ++
-                               ["add $" ++ (show fOffset) ++ ", %rax"{-,
-                                "mov (%rax), %rax"-}] -- get addr of the function
+                               ["add $" ++ (show fOffset) ++ ", %rax",
+                                "mov (%rax), %rax"] -- get addr of the function
                      (padding, ca''') = -- ca''': has objExpr, padding missing
                         alignStack $ popArguments (caAppendText cTableS ca'')
                                                   (length tpList)
@@ -981,7 +982,7 @@ cExpr (cdo@(oi, _, _, _), dS, tS, jt, su, mn) (TExprNewObj cName) =
              "call _malloc",
              "add $" ++ (show padding) ++ ", %rsp",
              -- "movq " ++ cName ++ "$$, (%rax)",
-             "movq " ++ cName ++ "$$(%rip), %rdi",
+             "leaq " ++ cName ++ "$$(%rip), %rdi",
              "movq %rdi, (%rax)",
              "push %rax"]
     in (cdo, dS, tS ++ s, jt, su ++ [("", TClass cName)], mn)
@@ -1008,7 +1009,7 @@ cExpr ca (TExprNewArr tp [e]) =
              "call " ++ (convFName "__DL_Array$__dl_create"),
              "add $" ++ (show padding) ++ ", %rsp"] ++
             (case tp of
-                 TClass _ -> ["movq __DL_RefArray$$(%rip), %rdi",
+                 TClass _ -> ["leaq __DL_RefArray$$(%rip), %rdi",
                               "movq %rdi, (%rax)"]
                  _ -> []) ++
             ["push %rax"]

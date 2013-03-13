@@ -26,7 +26,7 @@ cdoGetFuncOffset :: CDO -> String -> String -> Int
 cdoGetFuncOffset cdo@(oi, _, _, _) cName fName =
     case Data.Map.lookup cName oi of
         Nothing -> error $ "class " ++ cName ++ " undefined"
-        Just (_, (t1, t2), _) -> case Prelude.lookup fName (zip (t1 ++ t2) [0..]) of
+        Just (_, (t1, t2), _) -> case Prelude.lookup fName (zip (t1 ++ t2) [8,16..]) of
                                     Just idx -> idx
                                     Nothing -> error $ "cannot find def of function " ++ fName
 
