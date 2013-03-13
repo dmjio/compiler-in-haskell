@@ -34,6 +34,12 @@ void dlib_print_bool(char b) {
 // void dlib_print_str(char *s) {
 //     printf("%s", s);
 // }
+void dlib_print_str(char *s, int len) {
+    int i;
+    for (i = 0; i < len; i++) {
+        putchar(s[i]);
+    }
+}
 
 long dlib_arr_get(void *buf, long idx, long bsize) {
     if (bsize == 1) {return ((char *)buf)[idx];}

@@ -40,6 +40,10 @@ class __DL_Array { // implies "extends Object"
     int length() {
         return this.__dl_length;
     }
+
+    protected void __dl_putstr() {
+        __dlib_print_str(this.__dl_bufptr, this.__dl_length);
+    }
 }
 
 class __DL_RefArray extends __DL_Array {

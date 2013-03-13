@@ -94,7 +94,8 @@ cdoCBridges = fromList [
     ("__dlib_print_bool", (TVoid, [TBool])),
     ("__dlib_arr_get",    (TInt,  [TInt, TInt, TInt])),
     ("__dlib_arr_set",    (TVoid, [TInt, TInt, TInt, TInt])),
-    ("__dlib_memcpy",     (TVoid, [TInt, TInt, TInt]))]
+    ("__dlib_memcpy",     (TVoid, [TInt, TInt, TInt])),
+    ("__dlib_print_str",  (TVoid, [TInt, TInt]))]
 
 -- topological sorting!
 tSortClasses :: Map String TClassDef -> [String]

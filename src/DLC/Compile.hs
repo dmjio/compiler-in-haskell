@@ -142,7 +142,9 @@ compileMethod cdo cName (asData, asText) mName =
         asMethodBody :: [String]
         su :: [(String, TType)]
         (_, asDataInc, asMethodBody, _, su, _) =
-            foldl cBodyStmt (cdo, [], [], 1, stackUsage, mName') mBody
+            foldl cBodyStmt
+                  (cdo, [], ["# mBody: " ++ (show mBody)], 1, stackUsage, mName')
+                  mBody
         afterBody :: [String]
         afterBody = ["add $" ++ (show $ 8 * (length su)) ++ ", %rsp",
                      "pop %rbp",
@@ -150,7 +152,8 @@ compileMethod cdo cName (asData, asText) mName =
     in
         (asData ++ asDataInc,
          asText ++ [".globl " ++ (convFName mName'), (convFName mName') ++ ":"]
-         ++ beforeBody ++ asMethodBody ++ afterBody)
+         ++ beforeBody ++ ["# begin mBody: " {-++ (show mBody)-}]
+         ++ asMethodBody ++ ["# end mBody"] ++ afterBody)
 
 isIntType :: TType -> Bool
 isIntType TInt = True
@@ -203,9 +206,9 @@ getStackVar n = "-" ++ (show $ (n + 1) * 8) ++ "(%rbp)"
 type CArg = (CDO, [String], [String], Int, [(String, TType)], String)
 
 cBodyStmt :: CArg -> TBodyStmt -> CArg
-cBodyStmt x (TBSStmt s) = cStmt x s
+cBodyStmt x (TBSStmt s) = cStmt (caAppendText ["# stmt: " ++ (show s)] x) s
 cBodyStmt x (TBSExpr e) =
-    let (cdo, d, t, jt, su, fn) = cExpr x e
+    let (cdo, d, t, jt, su, fn) = cExpr (caAppendText [ "# expr: " ++ (show e)] x) e
     in (cdo, d,
         t ++ ["pop %rdi"], -- pop the temp var out of stack
         jt,
@@ -252,7 +255,9 @@ cStmt ca@(cdo, d, t, j, su, mn) (TStmtVarDef (vName, tp, expr)) = -- int i = 1;
                                    " into " ++ (show tp)
         -- variables defined inside blocks(for, while...) will be the same as if they are
         -- defined at beginning of the whole method.
-        Just x -> error $ "multiple definition of " ++ vName
+        Just x -> error $ "multiple definition of " ++ vName ++ " in " ++ mn
+
+-- print("hi") => "hi".__dl_putstr()
 cStmt ca@(cdo, dataSec, textSec, jt, su, mn) (TStmtPrint e) = -- print(15)
     let (_, dataSec', textSec', _, su', _) = cExpr ca e
         (_, tp_e) = last su'
@@ -266,7 +271,10 @@ cStmt ca@(cdo, dataSec, textSec, jt, su, mn) (TStmtPrint e) = -- print(15)
                      "sub $" ++ (show padding) ++ ", %rsp",
                      "call " ++ (convFName ptname), -- no return value, only one arg
                      "add $" ++ (show padding) ++ ", %rsp"]
-    in (cdo, dataSec', textSec' ++ callcText, jt, su, mn) -- not su'
+    in if tp_e == TArray 1 TByte
+       then case cExpr ca (TExprFunCall (Just e) "__dl_putstr" []) of
+                (cdo, dS, tS, jt, su, mn) -> (cdo, dS, tS ++ ["add $8, %rsp"], jt, init su, mn)
+       else (cdo, dataSec', textSec' ++ callcText, jt, su, mn) -- not su'
 
 cStmt ca@(cdo, dataSec, textSec, _, su, fName) (TStmtIf e b1 b2) = -- if (c) {b1} else {b2}
     let (_, dataSec', textSec', jt, su', _) =
@@ -292,17 +300,17 @@ cStmt ca@(cdo, dataSec, textSec, _, su, fName) (TStmtIf e b1 b2) = -- if (c) {b1
 cStmt ca@(cdo, dataSec, textSec, jt, su, fName) (TStmtFor initS condS incrS b) =
     let whileStmt = TStmtWhile condS (b ++ [TBSExpr incrS])
         ca' = case initS of
-                Left e -> cExpr ca e
+                Left e -> cExpr (caAppendText ["# before for"] ca) e
                 Right (tp, varList) ->
                     foldl (\a (vName, e) -> cStmt a (TStmtVarDef (vName, tp, e)))
-                          ca varList
+                          (caAppendText ["# before for"] ca) varList
         nTVar = case initS of
                     Left _ -> 0
                     Right (_, vl) -> length vl
         (_, dataSec', textSec', jt', su', _) = cStmt ca' whileStmt
         su'' = reverse $ drop nTVar $ reverse su'
         undefS = if nTVar /= 0
-                 then ["add $" ++ (show (nTVar * 8)) ++ ", %rsp"]
+                 then ["add $" ++ (show (nTVar * 8)) ++ ", %rsp # undef"]
                  else []
     in (cdo, dataSec', textSec' ++ undefS , jt', su'', fName)
 
@@ -317,7 +325,11 @@ cStmt ca@(cdo, dataSec, textSec, _, su, fName) (TStmtWhile e b) = -- while(e) {b
         sTag = getJTag fName jt
         eTag = getJTag fName (jt+1)
         (_, tp_e) = last su'
-        checkCondSec = [sTag ++ ":", "pop %rdi", "cmpb $0, %dil", "jz " ++ eTag]
+        checkCondSec = ["# begin while",
+                        sTag ++ ":",
+                        "pop %rdi",
+                        "cmpb $0, %dil",
+                        "jz " ++ eTag]
         ca' = (cdo, dataSec', textSec' ++ checkCondSec, jt+2, su, fName) -- su, not su'
         ca'' = caAppendText ["jmp " ++ sTag, eTag ++ ":"] (foldl cBodyStmt ca' b)
     in if not (tp_e == TBool || tp_e == TUnknown)
@@ -333,7 +345,10 @@ cStmt ca@(cdo, _, _, _, su, fName) (TStmtReturn e) =
         (_, tp_e) = last su'
         tp = case getFuncReturnType cdo fName of
                     Just x -> x
-        cleanUp = ["pop %rax", "add $" ++ (show $ (length su) * 8) ++ ", %rsp", "pop %rbp", "ret"]
+        cleanUp = ["pop %rax",
+                   "add $" ++ (show $ (length su) * 8) ++ ", %rsp",
+                   "pop %rbp",
+                   "ret"]
     in if {- tp == TVoid || -} canCoerceInto cdo tp_e tp
        then -- stack usage doesn't contain the returned value.
             -- (as if return is a function call)
@@ -468,7 +483,7 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                      tpList' = (drop 6 tpList) ++ (reverse $ take 6 tpList)
                      -- orig: 1 2 3 4 5 6 7 8
                      -- now: 7 8 6 5 4 3 2 1
-                     ca = caAppendText ["# before prepareArguments, old su: " ++ (show su)]
+                     ca = -- caAppendText ["# before prepareArguments, old su: " ++ (show su)]
                                        orig_ca
                      ca'@(cdo', dataSec', textSec', jt', su', mn') = foldl cExpr ca args'
                      ca'' = caAppendText ["# new su: " ++ (show su')]
@@ -477,7 +492,8 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                  in case wrongTp of
                         Just ((vName, sutp), argTp) ->
                             error $ "prepareArguments: cannot coerce " ++ (show sutp) ++
-                                    " <" ++ vName ++ "> into " ++ (show argTp)
+                                    " <" ++ vName ++ "> into " ++ (show argTp) ++
+                                    " when calling " ++ f
                         Nothing -> ca'
         -- popArguments: pop calculated arguments (which are on stack) into registers.
         --               stack usage will be also modified.
@@ -488,9 +504,9 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                           ([], drop 1 regTable)
                           (take argN $ repeat 0xDEADBEEF)
                 su' = reverse $ drop argN $ reverse su
-            in (cdo, dataSec, textSec ++ popArgs ++
+            in (cdo, dataSec, textSec ++ popArgs {- ++
                               ["# old su: " ++ (show su),
-                               "# after popArguments, new su: " ++ (show su')],
+                               "# after popArguments, new su: " ++ (show su')] -},
                 jt, su', mn)
         alignStack :: CArg -> (Int, CArg)
         alignStack ca@(cdo, dataSec, textSec, jt, su, mn) =
@@ -512,14 +528,31 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
         callObjFunc ca objExpr f args =
             if objExpr == (TExprVar "super") && ((not insideClassBody) || curClass == "Object")
             then error "cannot access super"
-            else let ca'@(cdo, d, t, jt, su, mn) =
+            else let ca'@(cdo, d, t, jt, su, mn) = -- su: includes objExpr
                             cExpr ca (case objExpr of
                                         TExprVar "super" -> TExprVar "this"
                                         _ -> objExpr)
-                     (_, TClass objClass) = last su
-                     su' = (init su) ++ [("$dlc_obj", TClass objClass)]
+                     -- maybeRetTp is used for "generic" methods;
+                     -- aka. __DL_Array.__dl_get().
+                     maybeRetTp :: Maybe TType
+                     (objClass, maybeRetTp) =
+                        case last su of
+                            (_, TClass objClass) -> (objClass, Nothing)
+                            -- RefArray doesn't add any new method;
+                            -- and also RefArray is not exposed to the user,
+                            -- so we could just use __DL_Array here.
+                            (_, TArray n tp) -> if f == "__dl_get"
+                                                then ("__DL_Array",
+                                                      if n == 1
+                                                      then Just tp
+                                                      else Just (TArray (n-1) tp))
+                                                else ("__DL_Array",
+                                                      -- RefArray doesn't add new method
+                                                      Nothing)
+                     su' = (init su) ++ [("$dlc_obj", TClass objClass)] -- su: has objExpr
                      Just (cName, acc, False, retTp, tpList) =
                         getClassMethodSignature ca' objClass f
+                     -- su in ca'': ..., objExpr, [orignial arguments], objExpr again
                      ca'' = prepareArguments (cdo, d, t, jt, su', mn)
                                              ((TExprVar "$dlc_obj"):args)
                                              tpList
@@ -530,11 +563,12 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                                 else []) ++
                                ["add $" ++ (show fOffset) ++ ", %rax"{-,
                                 "mov (%rax), %rax"-}] -- get addr of the function
-                     (padding, ca''') =
+                     (padding, ca''') = -- ca''': has objExpr, padding missing
                         alignStack $ popArguments (caAppendText cTableS ca'')
                                                   (length tpList)
 
                      -- +8: for the extra $dlc_obj
+                     -- ca'''': ..., objExpr
                      ca'''' = unalignStack (caAppendText ["callq *%rax"] ca''') (padding + 8)
                  in -- FIXME: allow accessing protected/private non-static attribute methods
                     --        from anywhere for now...
@@ -543,7 +577,10 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                     -- else
                     case ca'''' of
                         (cdo', d', t', jt', su', mn') ->
-                            let su = (init su') ++ [("", retTp)]
+                            let su = (init su') ++
+                                     [("", case maybeRetTp of
+                                                Nothing -> retTp
+                                                Just tp -> tp)]
                             in (cdo', d', t' ++ ["push %rax" ++ (showSU su)],
                                jt', su, mn')
 
@@ -554,7 +591,7 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                 (padding, ca'') = alignStack $ popArguments ca' $ length args
                 ca'''@(cdo, d, t, jt, su, mn) =
                     unalignStack (caAppendText ["call " ++ (convFName f)] ca'') padding
-            in (cdo, d, t ++ ["push %rax"], jt, su ++ [("", retTp)], mn)
+            in (cdo, d, t ++ ["push %rax # hey!"], jt, su ++ [("", retTp)], mn)
 
 cExpr ca (TExprAdd e1 e2) =
     let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
@@ -646,7 +683,7 @@ cExpr ca (TExprIncBy (TExprArrAccess eArr eSub) e) =
                                                (TExprVar "$dlc_e"))])
         tS = ["mov " ++ getStackVar (length su + 2) ++ ", %rax",
               "add $32, %rsp",
-              "push %rax"]
+              "push %rax # hey!"]
         su''' = su ++ [("", coerce t2 t3)]
     in (cdo'', d'', t'' ++ tS, jt'', su''', mn'')
 
@@ -909,14 +946,17 @@ cExpr ca (TExprAssign (TExprArrAccess eArr eSub) e) =
         apTp = case aTp of
                 TArray 1 t -> t
                 TArray n t -> TArray (n-1) t
+        -- su': ..., arr, sub, e
         su' = (take (length su - 3) su) ++
               [("$dlc_arr", aTp), ("$dlc_sub", sTp), ("$dlc_e", eTp)]
+        -- su'': ..., arr, sub, e, TVoid
         ca''@(cdo'', dS'', tS'', jt'', su'', mn'') =
             cExpr (cdo, dS, tS, jt, su', mn)
                   (TExprFunCall (Just $ TExprVar "$dlc_arr")
                                 "__dl_set"
-                                [TExprVar "$dlc_sub", TExprVar "$dlc_e"])
-        su''' = su ++ [("", apTp)]
+                                [TExprVar "$dlc_sub",
+                                 (TExprConvType TInt $ TExprVar "$dlc_e")])
+        su''' = (take (length su'' - 4) su'') ++ [("", apTp)]
         tS''' = ["add $8, %rsp", "pop %rax", "add $16, %rsp", "push %rax"]
     in if canCoerceInto cdo eTp apTp
        then (cdo'', dS'', tS''', jt'', su''', mn'')
