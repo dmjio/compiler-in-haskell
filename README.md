@@ -8,9 +8,9 @@ Just for fun.
 
 The language is:
 
-    1. compiled;
-    2. object oriented;
-    3. (not implemented yet) garbage collected
+1. compiled;
+2. object oriented (you could just use the imperative part);
+3. (not implemented yet) garbage collected
 
 As valgrind doesn't work on my Mac, I decided to leave the gc part unfinished.
 
@@ -21,8 +21,8 @@ However, you can see that I implemented incref/decref in Object, the universal b
 
 The biggest bugs are:
 
-	1. public/private/protected are all ignored.
-	2. memory leak (because gc is not implemented, obviously)
+1. public/private/protected are all ignored.
+2. memory leak (because gc is not implemented, obviously)
 	
 There are also some smaller bugs which I tagged FIXME in comment.
 
@@ -50,8 +50,8 @@ Notice that the compiler is targeded on Intel x86-64 Mac only.
 
 Because:
 
-	1. I have a new project to work on.
-	2. I'm pretty sure I know how to fix them, so that's not interesting anymore.
+1. I have a new project to work on.
+2. I'm pretty sure I know how to fix them, so that's not interesting anymore.
 
 Also, This compiler is just a TOY; it's implementation is UGLY. I don't care.
 
