@@ -55,12 +55,19 @@ transClassDef (className, superClassName, classBody) =
                             Nothing  -> "Object"
                             (Just x) -> x
         t = foldM transClassBody ([], []) classBody
+        isInit :: TClassMethodDef -> Bool
+        isInit = \(_, _, (f, _, _, _)) -> f == "init"
+        emptyInit :: TClassMethodDef
+        emptyInit = (TPublic, False, ("init", TVoid, [], []))
     in
         -- if not ((className =~ "^_*[A-Z][a-zA-Z0-9_]*$") :: Bool) then
         --     ErrorLog $ "Illegal class name: " ++ className
         -- else
             case t of
-                Ok (mDefList, aDefList) -> Ok (className, superClassName', aDefList, mDefList)
+                Ok (mDefList, aDefList) -> Ok (className, superClassName', aDefList,
+                                               mDefList ++ (if any isInit mDefList
+                                                            then []
+                                                            else [emptyInit]))
                 (ErrorLog eLog)         -> ErrorLog eLog
 
 transClassBody :: ([TClassMethodDef], [TClassAttrDef]) ->

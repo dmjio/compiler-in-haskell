@@ -11,6 +11,9 @@ import Text.Regex.Posix
 import DLC.CompileDataObject
 import DLC.TAST
 
+-- FIXME: cExpr may change the jump tag!
+--        (think about (bool)12)
+
 showSU :: [(String, TType)] -> String
 -- showSU x = " # " ++ (show x)
 showSU _ = ""
@@ -89,7 +92,7 @@ compileClass cdo (asData, asText) cName =
               (asData', asText) methodList
 
 -- when compileMethod is applied to class attribute methods,
--- the 2nd method is "Just superClassName".
+-- the 2nd method is "Just className".
 -- else it should be Nothing.
 compileMethod :: CDO -> Maybe String -> ([String], [String]) -> String -> ([String], [String])
 compileMethod cdo cName (asData, asText) mName =
@@ -144,7 +147,10 @@ compileMethod cdo cName (asData, asText) mName =
         (_, asDataInc, asMethodBody, _, su, _) =
             foldl cBodyStmt
                   (cdo, [], [], 1, stackUsage, mName')
-                  mBody
+                  ((if mName == "init" &&
+                       cName /= Nothing && cName /= Just "Object" && (not isStatic)
+                    then [TBSExpr $ TExprFunCall (Just $ TExprVar "super") "init" []]
+                    else []) ++ mBody)
         afterBody :: [String]
         afterBody = ["add $" ++ (show $ 8 * (length su)) ++ ", %rsp",
                      "pop %rbp",
@@ -168,7 +174,6 @@ getIntTypeRank TByte = 1
 
 -- for assignment / function call
 canCoerceInto :: CDO -> TType -> TType -> Bool
--- canCoerceInto _ TVoid TVoid = True -- FIXME: MAYBE this should not be True.
 canCoerceInto _ TVoid _     = False
 canCoerceInto _ _     TVoid = False
 canCoerceInto _ TUnknown _ = True
@@ -259,7 +264,7 @@ cStmt ca@(cdo, d, t, j, su, mn) (TStmtVarDef (vName, tp, expr)) = -- int i = 1;
 
 -- print("hi") => "hi".__dl_putstr()
 cStmt ca@(cdo, dataSec, textSec, jt, su, mn) (TStmtPrint e) = -- print(15)
-    let (_, dataSec', textSec', _, su', _) = cExpr ca e
+    let ca'@(_, dataSec', textSec', jt', su', _) = cExpr ca e
         (_, tp_e) = last su'
         ptname = if tp_e == TInt || tp_e == TInt32
                  then "__dlib_print_num"
@@ -274,7 +279,7 @@ cStmt ca@(cdo, dataSec, textSec, jt, su, mn) (TStmtPrint e) = -- print(15)
     in if tp_e == TArray 1 TByte
        then case cExpr ca (TExprFunCall (Just e) "__dl_putstr" []) of
                 (cdo, dS, tS, jt, su, mn) -> (cdo, dS, tS ++ ["add $8, %rsp"], jt, init su, mn)
-       else (cdo, dataSec', textSec' ++ callcText, jt, su, mn) -- not su'
+       else (cdo, dataSec', textSec' ++ callcText, jt', su, mn) -- not su'
 
 cStmt ca@(cdo, dataSec, textSec, _, su, fName) (TStmtIf e b1 b2) = -- if (c) {b1} else {b2}
     let (_, dataSec', textSec', jt, su', _) =
@@ -533,6 +538,23 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                             cExpr ca (case objExpr of
                                         TExprVar "super" -> TExprVar "this"
                                         _ -> objExpr)
+                     -- suppose we have:
+                     -- class T:
+                     --     func f
+                     -- class G extends T:
+                     --     func f
+                     -- when compiling T$f, realCurClass here is T
+                     -- no matter the real "this" is G or not.
+                     realCurClass = takeWhile ('$'/=) cf
+                     supClassHasF :: String
+                     supClassHasF = r realCurClass
+                        where r :: String -> String
+                              r c = case cdoGetMaybeSuperClass cdo c of
+                                        Nothing -> error $ "cannot call super." ++ f
+                                                           ++ "() inside " ++ realCurClass
+                                        Just x -> case getClassMethodSignature ca' x f of
+                                                    Just _ -> x
+                                                    Nothing -> r x
                      -- maybeRetTp is used for "generic" methods;
                      -- aka. __DL_Array.__dl_get().
                      maybeRetTp :: Maybe TType
@@ -558,13 +580,13 @@ cExpr ca@(_, _, _, _, _, cf) (TExprFunCall maybeE f args) =
                                              ((TExprVar "$dlc_obj"):args)
                                              tpList
                      fOffset = cdoGetFuncOffset cdo objClass f
-                     cTableS = ["movq (%rsp), %rax", -- get pointer to the obj
-                                "movq (%rax), %rax"] ++ -- get pointer to the MT
-                               (if objExpr == TExprVar "super"
-                                then ["movq (%rax), %rax"]
-                                else []) ++
-                               ["add $" ++ (show fOffset) ++ ", %rax",
-                                "mov (%rax), %rax"] -- get addr of the function
+                     cTableS = if objExpr == TExprVar "super"
+                               then ["leaq " ++ (convFName $ supClassHasF ++ "$" ++ f)
+                                     ++ "(%rip), %rax"]
+                               else ["movq (%rsp), %rax", -- get pointer to the obj
+                                     "movq (%rax), %rax", -- get pointer to the MT
+                                     "add $" ++ (show fOffset) ++ ", %rax",
+                                     "mov (%rax), %rax"] -- get addr of the function
                      (padding, ca''') = -- ca''': has objExpr, padding missing
                         alignStack $ popArguments (caAppendText cTableS ca'')
                                                   (length tpList)
@@ -610,7 +632,6 @@ cExpr ca (TExprMin e1 e2) =
         textSec' = textSec ++ ["pop %rsi", "pop %rdi", "sub %rsi, %rdi", "push %rdi"]
         su' = (take (length su - 2) su) ++ [("", tp)]
     in (cdo, dataSec, textSec', jt, su', mn)
--- FIXME: use imul/idiv ?
 cExpr ca (TExprMul e1 e2) =
     let (cdo, dataSec, textSec, jt, su, mn) = foldl cExpr ca [e1, e2]
         [(_, e1tp), (_, e2tp)] = drop (length su - 2) su
@@ -878,7 +899,7 @@ cExpr (cdo, dS, tS, jt, su, mn) (TExprBool b) =
 cExpr (cdo, dS, tS, jt, su, mn) (TExprVar v) =
     let (idx, (_, tp)) = case find (\(i, (vn, tp)) -> vn == v) $ zip [0..] su of
                             Just x -> x
-                            Nothing -> error $ "cannot find variable " ++ v
+                            Nothing -> error $ "cannot find variable " ++ v ++ " in " ++ mn
         tS' = tS ++ ["mov " ++ getStackVar idx ++ ", %rdi", "push %rdi"]
     in (cdo, dS, tS', jt, su ++ [("", tp)], mn)
 cExpr (cdo, dS, tS, jt, su, mn) (TExprInt n) =
@@ -913,10 +934,10 @@ cExpr ca (TExprConvType tp e) =
         su' = (init su) ++ [("", tp)]
         tS' = if _tBoolConvert
               then tS ++ ["pop %rax",       -- pop %rax
-                          "cmpq $0, %rax",   -- cmp %rax, $0
-                          "jz " ++ tag,    -- jz T
-                          tag ++ ":",      -- T:
+                          "cmpq $0, %rax",   -- cmp $0, %rax
+                          "je " ++ tag,    -- je T
                           "mov $1, %rax",   --    mov $1, %rax
+                          tag ++ ":",      -- T:
                           "push %rax"]      -- push %rax
               else tS
     in (cdo, dS, tS', jt', su', mn)
@@ -975,10 +996,10 @@ cExpr ca (TExprAssign e1 e2) =
         tS' = tS ++ ["pop %rdi", "pop %rsi", "mov %rdi, (%rsi)", "push %rdi"]
     in (cdo, dS, tS', jt, su', mn)
 
--- FIXME: call init
 cExpr (cdo@(oi, _, _, _), dS, tS, jt, su, mn) (TExprNewObj cName) =
     let (oSize, _, _) = case Data.Map.lookup cName oi of Just x -> x
         padding = ((length su) `mod` 2) * 8
+        padding' = if padding == 8 then 0 else 8
         s = ["mov $" ++ (show oSize) ++ ", %rdi",
              "sub $" ++ (show padding) ++ ", %rsp",
              "call _malloc",
@@ -986,7 +1007,11 @@ cExpr (cdo@(oi, _, _, _), dS, tS, jt, su, mn) (TExprNewObj cName) =
              -- "movq " ++ cName ++ "$$, (%rax)",
              "leaq " ++ cName ++ "$$(%rip), %rdi",
              "movq %rdi, (%rax)",
-             "push %rax"]
+             "push %rax", -- to be returned
+             "mov %rax, %rdi",
+             "sub $" ++ (show padding') ++ ", %rsp",
+             "call " ++ (convFName $ cName ++ "$init"),
+             "add $" ++ (show padding') ++ ", %rsp"]
     in (cdo, dS, tS ++ s, jt, su ++ [("", TClass cName)], mn)
 
 -- new int[35]  =>  RefArray of Array

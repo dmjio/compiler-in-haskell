@@ -3,7 +3,8 @@ module DLC.CompileDataObject
      cdoGetClassAttrDef,
      cdoGetClasses, cdoGetMethods,
      cdoGetObjSize, cdoGetClassMethodTable, cdoGetAttrOffset, cdoGetFuncOffset,
-     cdoGetSuperClass, cdoGetClassDef, cdoGetMethodDef, cdoGetClassMethodDef)
+     cdoGetSuperClass, cdoGetMaybeSuperClass,
+     cdoGetClassDef, cdoGetMethodDef, cdoGetClassMethodDef)
 where
 
 import Data.Map hiding (map, foldl, filter)
@@ -69,6 +70,12 @@ cdoGetSuperClass cdo cName =
     case cdo of
         (_, cDefMap, _, _) -> case (cDefMap ! cName) of
             (_, sc, _, _) -> sc
+cdoGetMaybeSuperClass :: CDO -> String -> Maybe String
+cdoGetMaybeSuperClass _ "Object" = Nothing
+cdoGetMaybeSuperClass (_, cDefMap, _, _) c = 
+    case Data.Map.lookup c cDefMap of
+        Just (_, sc, _, _) -> Just sc
+        Nothing -> Nothing
 cdoGetClassDef :: CDO -> String -> TClassDef
 cdoGetClassDef cdo cName =
     case cdo of (_, cDefMap, _, _) -> cDefMap ! cName

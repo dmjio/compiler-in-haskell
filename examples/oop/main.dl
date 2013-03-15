@@ -30,7 +30,7 @@ class Point extends Pos {
     int y;
 
     void init() {
-        super.init();
+        // super.init();
         this.setY(0);
     }
 

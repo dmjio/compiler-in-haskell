@@ -1,0 +1,16 @@
+class T {
+    void init() {
+        print("Hello from T\n");
+    }
+}
+
+class G extends T {
+    void init() {
+        print("Hello from G\n");
+    }
+}
+
+int main() {
+    G g = new G();
+    return 0;
+}
